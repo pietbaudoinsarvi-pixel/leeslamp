@@ -4,158 +4,308 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f5f1">
+  <meta name="theme-color" content="#f3f3ef">
   <meta name="description" content="Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.">
   <title>Leeslamp</title>
+  <script>
+    try { const mode = localStorage.getItem('leeslamp.mode'); if (['auto','light','dark'].includes(mode)) document.documentElement.dataset.mode = mode; } catch { /* System theme remains available without storage. */ }
+  </script>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Lato:ital,wght@0,400;0,700;1,400&family=Lexend:wght@400;600&display=swap" rel="stylesheet">
-  <!-- Modern browsers implement adoptedStyleSheets natively; no polyfill dependency. -->
+  <!-- Native adoptedStyleSheets; no polyfill dependency. -->
   <script type="importmap">{"imports":{"construct-style-sheets-polyfill":"data:text/javascript,export%20%7B%7D"}}</script>
   <style>
-    :root { --bg:#f6f5f1; --side:#eeece7; --fg:#1d1c19; --mute:#7a776f; --line:rgba(0,0,0,.08); --hover:rgba(0,0,0,.05); --accent:#c8862f; --card:#ffffff; color-scheme:light; }
-    @media (prefers-color-scheme:dark) {
-      :root:not([data-mode="light"]) { --bg:#151412; --side:#1c1b18; --fg:#e9e6df; --mute:#8d8a82; --line:rgba(255,255,255,.08); --hover:rgba(255,255,255,.06); --accent:#e0a04a; --card:#23221e; color-scheme:dark; }
+    :root {
+      --bg:#f3f3ef; --side:#eaece7; --fg:#252b28; --mute:#58615b; --line:#d2d7cf;
+      --hover:#dfe4dc; --accent:#925331; --card:#fafbf7; --on-accent:#ffffff;
+      --cover-ink:#f9f8f1; --cover-0:#3c554b; --cover-1:#675744; --cover-2:#405663;
+      --cover-3:#636044; --cover-4:#555b57; --cover-5:#744d3b;
+      --shadow:0 16px 48px #18251c18; --paper:#ffffff; --paper-shadow:0 2px 12px #18251c16;
+      --ease:cubic-bezier(.2,.7,.2,1); --unit:8px; color-scheme:light;
     }
-    :root[data-mode="dark"] { --bg:#151412; --side:#1c1b18; --fg:#e9e6df; --mute:#8d8a82; --line:rgba(255,255,255,.08); --hover:rgba(255,255,255,.06); --accent:#e0a04a; --card:#23221e; color-scheme:dark; }
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-mode="light"]) {
+        --bg:#171c19; --side:#121613; --fg:#e5eae2; --mute:#a1ada3; --line:#343e36;
+        --hover:#29332c; --accent:#d4a080; --card:#202822; --on-accent:#20170f;
+        --cover-ink:#e7ece3; --cover-0:#32483f; --cover-1:#514636; --cover-2:#334853;
+        --cover-3:#4c4b34; --cover-4:#414a43; --cover-5:#5b3d30;
+        --shadow:0 16px 48px #00000040; --paper:#ffffff; --paper-shadow:0 2px 12px #00000030; color-scheme:dark;
+      }
+    }
+    :root[data-mode="dark"] {
+      --bg:#171c19; --side:#121613; --fg:#e5eae2; --mute:#a1ada3; --line:#343e36;
+      --hover:#29332c; --accent:#d4a080; --card:#202822; --on-accent:#20170f;
+      --cover-ink:#e7ece3; --cover-0:#32483f; --cover-1:#514636; --cover-2:#334853;
+      --cover-3:#4c4b34; --cover-4:#414a43; --cover-5:#5b3d30;
+      --shadow:0 16px 48px #00000040; --paper:#ffffff; --paper-shadow:0 2px 12px #00000030; color-scheme:dark;
+    }
     * { box-sizing:border-box; }
     [hidden] { display:none !important; }
-    body { background:var(--bg); color:var(--fg); margin:0; height:100vh; overflow:hidden; font:14px -apple-system,"Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
+    body { margin:0; height:100vh; height:100dvh; overflow:hidden; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
     button,input,select { font:inherit; color:inherit; }
-    button { cursor:pointer; border:0; background:none; border-radius:6px; padding:8px 12px; }
+    button { cursor:pointer; border:0; border-radius:2px; background:none; padding:8px 12px; min-height:36px; touch-action:manipulation; transition:transform 150ms var(--ease),opacity 150ms var(--ease); }
     button:hover { background:var(--hover); }
-    button:disabled { opacity:.35; cursor:default; }
+    button:active:not(:disabled) { transform:translateY(1px) scale(.98); }
+    button:disabled { opacity:.4; cursor:default; }
     :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-    #library { display:flex; height:100%; }
-    #library.dragging { outline:3px dashed var(--accent); outline-offset:-8px; }
-    #sidebar { width:220px; flex-shrink:0; background:var(--side); padding:28px 16px 18px; display:flex; flex-direction:column; border-right:1px solid var(--line); }
-    .brand { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; padding:0 10px 34px; }
-    .brand svg { width:27px; height:27px; }
-    #filters { overflow:auto; flex:1; }
-    #filters button { width:100%; display:flex; justify-content:space-between; text-align:left; margin-bottom:3px; }
-    #filters button[aria-current] { background:var(--hover); }
-    #filters .count,.section-label { color:var(--mute); font-size:12px; }
-    .section-label { padding:25px 12px 8px; }
-    .sidebar-bottom { padding-top:24px; display:flex; gap:8px; flex-wrap:wrap; }
-    .import { border:1px solid color-mix(in srgb,var(--accent) 55%,transparent); background:color-mix(in srgb,var(--accent) 8%,transparent); }
-    .sidebar-bottom .import { width:100%; }
-    #mode { margin-left:auto; }
-    main { flex:1; min-width:0; overflow:auto; }
-    .library-header { display:flex; align-items:center; gap:16px; padding:29px 32px 26px; flex-wrap:wrap; }
-    h1 { font-size:20px; font-weight:600; margin:0 auto 0 0; }
-    #search,select { border:1px solid var(--line); background:var(--card); padding:8px 10px; border-radius:6px; }
-    #search { width:200px; }
-    #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:28px 22px; padding:8px 32px 48px; }
+    ::selection { background:var(--accent); color:var(--on-accent); }
+    svg { flex-shrink:0; }
+    .icon { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:square; stroke-linejoin:miter; vertical-align:middle; }
+    .svg-defs { position:absolute; width:0; height:0; overflow:hidden; }
+    .eyebrow,.section-label { font-size:10px; line-height:1.4; letter-spacing:.16em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+    #library { display:flex; height:100%; animation:view-in 500ms var(--ease); }
+    #library.dragging { outline:2px dashed var(--accent); outline-offset:-8px; }
+    #library.dragging::after { content:'Laat los om toe te voegen'; position:fixed; inset:16px; z-index:10; display:grid; place-content:center; border:1px solid var(--accent); background:var(--bg); color:var(--fg); font-size:24px; letter-spacing:-.04em; pointer-events:none; }
+    #sidebar { width:216px; flex-shrink:0; background:var(--side); padding:32px 16px 16px; display:flex; flex-direction:column; border-right:1px solid var(--line); }
+    .brand { display:flex; align-items:center; gap:12px; padding:0 12px 40px; font-size:17px; letter-spacing:-.045em; font-weight:600; }
+    .brand svg { width:28px; height:32px; color:var(--accent); }
+    .sidebar-heading { padding:0 12px 12px; }
+    #filters { overflow:auto; flex:1; scrollbar-width:thin; }
+    #filters button { position:relative; width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; margin:2px 0; padding:10px 12px; font-size:13px; }
+    #filters button[aria-current] { background:var(--hover); font-weight:600; }
+    #filters button[aria-current]::before { content:''; position:absolute; left:0; top:12px; bottom:12px; width:2px; background:var(--accent); }
+    .count { font-size:11px; color:var(--mute); font-weight:400; font-variant-numeric:tabular-nums; }
+    .section-label { padding:28px 12px 10px; }
+    .sidebar-bottom { margin-top:24px; border-top:1px solid var(--line); padding-top:16px; display:flex; flex-direction:column; gap:16px; }
+    .import { display:inline-flex; align-items:center; justify-content:center; gap:12px; padding:10px 16px; background:var(--fg); color:var(--bg); font-size:13px; font-weight:600; }
+    .import:hover { background:var(--accent); color:var(--on-accent); }
+    .sidebar-bottom .import { justify-content:space-between; width:100%; }
+    .device-note { display:flex; align-items:center; gap:6px; padding:0 8px; color:var(--mute); font-size:11px; }
+    .device-note > .icon { width:14px; height:14px; }
+    #mode { margin-left:auto; padding:6px; min-height:32px; }
+    #mode .icon { width:18px; height:18px; }
+    main { flex:1; min-width:0; overflow:auto; scrollbar-gutter:stable; }
+    .library-content { max-width:2200px; margin:auto; padding:40px clamp(24px,3.4vw,80px) 56px; }
+    .library-header { display:flex; flex-wrap:wrap; align-items:flex-end; gap:24px; padding-bottom:28px; border-bottom:1px solid var(--line); }
+    .heading { flex:1; min-width:180px; }
+    .heading .eyebrow { display:block; margin-bottom:12px; }
+    .heading h1 { font-size:clamp(28px,2.4vw,38px); line-height:1.15; font-weight:450; letter-spacing:-.055em; margin:0; }
+    .library-tools { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
+    .search-field { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); }
+    .search-field .icon { width:16px; height:16px; color:var(--mute); }
+    #search { width:clamp(120px,12vw,200px); min-width:0; background:none; border:0; padding:8px 0; border-radius:0; font-size:12px; }
+    #search::placeholder { color:var(--mute); opacity:1; }
+    select { max-width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); padding:8px 4px; border-radius:0; font-size:12px; cursor:pointer; }
+    .library-meta { display:flex; align-items:center; justify-content:space-between; margin:20px 0 28px; color:var(--mute); font-size:11px; font-variant-numeric:tabular-nums; }
+    .library-meta > span:last-child { letter-spacing:.1em; text-transform:uppercase; font-size:10px; }
+    #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(152px,1fr)); gap:36px 28px; }
     .card { min-width:0; position:relative; }
-    .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:4px; }
+    .card.arriving { animation:cover-in 560ms var(--ease) both; animation-delay:var(--delay,0ms); }
+    .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:0; }
     .book-open:hover { background:none; }
-    .cover { aspect-ratio:2/3; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,.18),0 6px 16px rgba(0,0,0,.12); overflow:hidden; transition:transform 120ms; display:flex; align-items:center; justify-content:center; }
-    .card:hover .cover { transform:translateY(-2px); }
+    .cover { position:relative; aspect-ratio:2/3; overflow:hidden; display:flex; align-items:center; justify-content:center; background:var(--card); border:1px solid var(--line); transition:transform 150ms var(--ease); }
+    .book-open:hover .cover { transform:translateY(-3px); }
     .cover img { width:100%; height:100%; object-fit:cover; }
-    .placeholder { font:15px Lora,Georgia,serif; text-align:center; padding:20px; color:#fffaf0; overflow-wrap:anywhere; }
-    .book-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:13px; font-weight:500; margin-top:12px; }
-    .book-author { display:block; color:var(--mute); font-size:12px; margin-top:4px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    .progress-track { display:block; height:2px; background:var(--line); margin-top:5px; }
-    .progress-track span { display:block; height:100%; background:var(--accent); }
-    .delete { position:absolute; right:5px; top:5px; padding:0; width:26px; height:26px; background:var(--card); box-shadow:0 1px 4px #0003; opacity:0; font-size:20px; transition:opacity 120ms; }
+    .cover.no-cover { border:0; background:var(--cover-color); color:var(--cover-ink); align-items:stretch; justify-content:stretch; }
+    .cover.no-cover::before { content:''; position:absolute; left:8px; inset-block:0; border-left:1px solid currentColor; opacity:.22; }
+    .placeholder { display:flex; flex-direction:column; justify-content:space-between; padding:20px 18px 18px 24px; width:100%; overflow:hidden; }
+    .placeholder-format { font-size:10px; letter-spacing:.18em; border-top:1px solid currentColor; padding-top:8px; }
+    .placeholder-title { font:clamp(17px,1.5vw,23px)/1.3 Lora,Georgia,serif; letter-spacing:-.025em; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; margin:16px 0; }
+    .placeholder-author { font-size:10px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .book-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:13px; line-height:1.45; font-weight:600; margin-top:12px; }
+    .book-author { display:block; color:var(--mute); font-size:11px; margin-top:4px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .book-meta { display:flex; justify-content:space-between; margin-top:10px; padding-top:8px; border-top:1px solid var(--line); color:var(--mute); font-size:10px; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
+    .progress-track { display:block; height:2px; background:var(--line); margin-top:6px; overflow:hidden; }
+    .progress-track span { display:block; width:100%; height:100%; background:var(--accent); transform:scaleX(var(--fraction)); transform-origin:left; }
+    .arriving .progress-track span { animation:progress-in 600ms var(--ease) both; animation-delay:calc(var(--delay,0ms) + 300ms); }
+    .delete { position:absolute; right:6px; top:6px; padding:6px; min-height:32px; width:32px; background:var(--card); color:var(--fg); border:1px solid var(--line); opacity:0; }
+    .delete .icon { width:16px; height:16px; }
     .card:hover .delete,.card:focus-within .delete { opacity:1; }
-    #empty,#no-results { text-align:center; color:var(--mute); padding:22vh 24px 24px; }
-    #empty h2 { font:22px Lora,Georgia,serif; color:var(--fg); margin:0 0 16px; }
-    #empty p { line-height:1.8; margin-bottom:24px; }
-    #reader { position:fixed; inset:0; background:var(--rbg); color:var(--rfg); --rbg:#fff; --rfg:#1a1a1a; --rlink:#2a6db0; }
+    #empty,#no-results { text-align:center; color:var(--mute); padding:clamp(48px,12vh,140px) 0 32px; max-width:520px; margin:auto; }
+    .empty-mark { width:120px; height:132px; color:var(--accent); margin-bottom:28px; }
+    #empty h2,#no-results h2 { color:var(--fg); font-size:26px; line-height:1.3; font-weight:450; letter-spacing:-.045em; margin:0 0 16px; }
+    #empty p,#no-results p { line-height:1.8; margin:0 auto 24px; max-width:330px; font-size:13px; }
+    #empty .formats { margin-top:24px; max-width:380px; font-size:10px; line-height:2; letter-spacing:.04em; }
+    #no-results .icon { width:32px; height:32px; margin-bottom:24px; }
+    #reader { position:fixed; inset:0; background:var(--rbg); color:var(--rfg); --rbg:var(--paper); --rfg:var(--fg); --rlink:var(--accent); --rline:color-mix(in srgb,var(--rfg) 18%,var(--rbg)); --rmuted:color-mix(in srgb,var(--rfg) 88%,var(--rbg)); --rhover:color-mix(in srgb,var(--rfg) 9%,var(--rbg)); animation:view-in 500ms var(--ease); }
+    #reader :focus-visible { outline-color:var(--rfg); }
+    #reader ::selection { background:var(--rfg); color:var(--rbg); }
     #r-body { position:absolute; inset:0; }
     foliate-view { display:block; height:100%; }
     foliate-view.fixed-layout { padding:56px 0; }
-    .reader-bar { position:absolute; left:0; right:0; height:44px; display:flex; align-items:center; gap:12px; padding:0 16px; z-index:3; background:color-mix(in srgb,var(--rbg) 92%,transparent); backdrop-filter:blur(8px); color:color-mix(in srgb,var(--rfg) 70%,transparent); transition:opacity 150ms; }
-    #top-bar { top:0; border-bottom:1px solid color-mix(in srgb,var(--rfg) 10%,transparent); }
-    #bottom-bar { bottom:0; border-top:1px solid color-mix(in srgb,var(--rfg) 10%,transparent); }
-    #reader button:hover { background:color-mix(in srgb,var(--rfg) 8%,transparent); }
+    .reader-bar { position:absolute; left:0; right:0; height:48px; display:flex; align-items:center; gap:16px; padding:0 24px; z-index:3; background:color-mix(in srgb,var(--rbg) 94%,transparent); backdrop-filter:blur(8px); color:var(--rmuted); transition:opacity 500ms var(--ease),transform 500ms var(--ease); }
+    #top-bar { top:0; border-bottom:1px solid var(--rline); }
+    #bottom-bar { bottom:0; border-top:1px solid var(--rline); }
+    #reader button:hover { background:var(--rhover); }
+    #reader button[aria-expanded="true"] { background:var(--rhover); color:var(--rfg); }
     #reader.bars-hidden .reader-bar { opacity:0; pointer-events:none; }
-    #r-title { flex:1; min-width:0; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13px; }
-    #aa { font:18px Georgia,serif; }
-    #slider { flex:1; min-width:30px; accent-color:var(--accent); height:16px; }
-    #progress-label { font-size:12px; max-width:32%; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; min-width:40px; text-align:right; }
-    #pdf,#text { position:absolute; inset:0; overflow:auto; padding:56px 0; overscroll-behavior:contain; outline-offset:-3px; overflow-anchor:none; }
-    .page { position:relative; width:min(calc(100% - 48px),var(--read-width)); margin:0 auto 16px; background:white; box-shadow:0 1px 2px #0003,0 6px 16px #0002; content-visibility:auto; }
+    #reader.bars-hidden #top-bar { transform:translateY(-8px); }
+    #reader.bars-hidden #bottom-bar { transform:translateY(8px); }
+    #back { display:flex; align-items:center; gap:8px; padding-left:0; font-size:12px; }
+    #r-title { flex:1; min-width:0; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }
+    .reader-actions { display:flex; align-items:center; gap:8px; min-width:120px; justify-content:flex-end; }
+    #aa { font:20px/1 Georgia,serif; padding:8px 10px; }
+    #prev,#next,#toc-button { padding:6px; width:36px; }
+    .slider-wrap { position:relative; flex:1; min-width:30px; display:flex; align-items:center; height:32px; }
+    .slider-rail { position:absolute; left:8px; right:8px; height:2px; background:var(--rline); pointer-events:none; }
+    #slider-fill { display:block; width:100%; height:100%; background:var(--rfg); transform:scaleX(var(--fraction,0)); transform-origin:left; transition:transform 500ms var(--ease); }
+    .slider-wrap:has([dir="rtl"]) #slider-fill { transform-origin:right; }
+    #slider { position:relative; margin:0; width:100%; min-width:0; height:32px; appearance:none; background:transparent; cursor:pointer; }
+    #slider::-webkit-slider-runnable-track { height:2px; background:transparent; }
+    #slider::-moz-range-track { height:2px; background:transparent; }
+    #slider::-webkit-slider-thumb { appearance:none; width:8px; height:16px; margin-top:-7px; background:var(--rfg); border:2px solid var(--rbg); border-radius:0; }
+    #slider::-moz-range-thumb { width:4px; height:12px; background:var(--rfg); border:2px solid var(--rbg); border-radius:0; }
+    #progress-label { font-size:11px; font-variant-numeric:tabular-nums; max-width:32%; min-width:48px; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; text-align:right; }
+    #pdf,#text { position:absolute; inset:0; overflow:auto; padding:64px 0; overscroll-behavior:contain; outline-offset:-3px; overflow-anchor:none; }
+    .page { position:relative; width:min(calc(100% - 48px),var(--read-width)); margin:0 auto 16px; background:var(--paper); box-shadow:var(--paper-shadow); content-visibility:auto; }
     .page canvas { display:block; position:absolute; inset:0; width:100%; height:100%; }
     #reader[data-dark="true"] .page { background:var(--rbg); }
     #reader[data-dark="true"] .page canvas { filter:invert(.88) hue-rotate(180deg); }
     #text article { box-sizing:border-box; max-width:var(--read-width); margin:0 auto; padding:0 32px; overflow-wrap:anywhere; }
-    #text article a { color:var(--rlink); }
+    #text article a { color:var(--rlink); text-underline-offset:.18em; }
     #text article img,#text article svg { max-width:100%; height:auto; }
     #text article pre { white-space:pre-wrap; }
     #text article table { max-width:100%; display:block; overflow:auto; }
     #text article p,#text article li { hyphens:auto; }
-    .popover { position:absolute; z-index:5; background:var(--rbg); color:var(--rfg); border:1px solid color-mix(in srgb,var(--rfg) 15%,transparent); border-radius:10px; box-shadow:0 12px 40px #0003; }
-    #prefs { top:50px; right:16px; width:300px; padding:18px; max-height:calc(100% - 100px); overflow:auto; }
-    .pref-label { display:block; font-size:12px; opacity:.7; margin:0 0 10px; }
-    .pref-group { margin-bottom:18px; }
-    #themes { display:flex; justify-content:space-between; padding:2px; }
-    #themes button { width:28px; height:28px; border-radius:50%; border:1px solid color-mix(in srgb,var(--rfg) 20%,transparent); padding:0; }
-    #themes button[aria-pressed="true"] { outline:2px solid var(--accent); outline-offset:3px; }
-    .segments { display:flex; flex-wrap:wrap; gap:3px; }
-    .segments button { padding:7px 9px; font-size:13px; }
-    .segments button[aria-pressed="true"] { background:color-mix(in srgb,var(--rfg) 12%,transparent); }
-    .stepper { display:flex; align-items:center; margin:8px 0; }
-    .stepper > span { flex:1; }
-    .stepper output { width:38px; text-align:center; font-variant-numeric:tabular-nums; }
-    .stepper button { font-size:18px; }
-    #flow-row { margin-top:16px; }
-    #justify-row { display:flex; align-items:center; justify-content:space-between; margin-top:16px; }
-    #justify { accent-color:var(--accent); }
-    #toc { top:50px; left:16px; bottom:56px; width:min(340px,calc(100% - 32px)); padding:16px 10px; overflow:auto; }
-    #toc h2 { font-size:15px; margin:0 12px 12px; }
+    #text article h1,#text article h2,#text article h3 { letter-spacing:-.025em; line-height:1.3; scroll-margin-top:72px; }
+    .popover { position:absolute; z-index:5; background:var(--rbg); color:var(--rfg); border:1px solid var(--rline); border-radius:2px; box-shadow:var(--shadow); animation:panel-in 500ms var(--ease) both; }
+    .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--rline); padding-bottom:16px; margin-bottom:20px; }
+    .panel-heading h2 { font-size:16px; letter-spacing:-.035em; font-weight:500; margin:0; }
+    .panel-close { padding:4px; width:28px; min-height:28px; }
+    .panel-close .icon { width:16px; height:16px; }
+    #prefs { top:56px; right:16px; width:360px; padding:20px; max-height:calc(100% - 112px); overflow:auto; transform-origin:top right; }
+    .pref-label { display:block; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--rmuted); margin:0 0 12px; }
+    .pref-group { margin-bottom:24px; }
+    #themes,.segments { position:relative; display:grid; grid-template-columns:repeat(var(--options),minmax(0,1fr)); isolation:isolate; }
+    #themes { --options:6; padding-bottom:8px; }
+    #themes::before,.segments::before { content:''; position:absolute; left:0; width:calc(100% / var(--options)); bottom:0; transform:translateX(calc(var(--selected,0) * 100%)); transition:transform 500ms var(--ease); pointer-events:none; }
+    #themes::before { height:2px; background:var(--rfg); }
+    #themes button { min-width:0; padding:0 4px; border-radius:0; }
+    .theme-sample { display:grid; place-items:center; height:38px; font:21px Georgia,serif; border:1px solid var(--rline); background:var(--sample-bg); color:var(--sample-fg); }
+    .theme-name { display:block; padding-top:8px; font-size:10px; color:var(--rmuted); }
+    #themes button[aria-pressed="true"] .theme-name { color:var(--rfg); font-weight:700; }
+    .segments { --options:5; border:1px solid var(--rline); }
+    .segments::before { z-index:-1; top:0; background:var(--rhover); border-bottom:2px solid var(--rfg); }
+    .segments button { min-width:0; padding:8px 2px; font-size:11px; border-radius:0; }
+    #reader .segments button:hover { background:transparent; }
+    .segments button[aria-pressed="true"] { font-weight:700; }
+    .stepper { display:flex; align-items:center; border-top:1px solid var(--rline); padding:8px 0; gap:4px; }
+    .stepper > span { flex:1; font-size:12px; }
+    .stepper output { width:44px; text-align:center; font-size:15px; font-variant-numeric:tabular-nums; }
+    .stepper button { font-size:18px; width:32px; padding:4px; }
+    #flow-row { margin-top:20px; }
+    #flows { --options:2; }
+    #flows button { font-size:12px; }
+    #justify-row { display:flex; align-items:center; justify-content:space-between; margin-top:20px; font-size:12px; }
+    #justify { appearance:none; width:18px; height:18px; margin:0; border:1px solid var(--rmuted); border-radius:0; display:grid; place-content:center; cursor:pointer; }
+    #justify::before { content:''; width:8px; height:8px; background:var(--rfg); transform:scale(0); transition:transform 150ms var(--ease); }
+    #justify:checked::before { transform:scale(1); }
+    #toc { top:56px; left:16px; bottom:56px; width:min(352px,calc(100% - 32px)); padding:20px; overflow:auto; transform-origin:top left; }
     #toc-list ol { list-style:none; padding-left:12px; margin:0; }
-    #toc-list a,#toc-list span { display:block; padding:6px 8px; border-radius:6px; color:var(--rfg); opacity:.8; text-decoration:none; }
-    #toc-list a[aria-current] { background:color-mix(in srgb,var(--rfg) 10%,transparent); opacity:1; }
-    #toc-list svg { fill:currentColor; margin-left:-20px; margin-right:7px; }
+    #toc-list > ol { padding-left:0; }
+    #toc-list a,#toc-list span { display:block; padding:10px 12px; border-left:2px solid transparent; color:var(--rmuted); text-decoration:none; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+    #toc-list a:hover { background:var(--rhover); }
+    #toc-list a[aria-current] { border-left-color:var(--rfg); background:var(--rhover); color:var(--rfg); }
+    #toc-list svg { fill:currentColor; margin-left:-8px; margin-right:7px; }
     #toc-list [aria-expanded="false"] + ol { display:none; }
     #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
-    #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); max-width:calc(100% - 32px); background:var(--fg); color:var(--bg); padding:12px 20px; border-radius:8px; box-shadow:0 4px 20px #0002; white-space:pre-line; }
-    #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rfg); font-family:Lora,Georgia,serif; }
-    @media (max-width:700px) {
-      #sidebar { width:160px; padding:24px 8px 12px; }
-      .brand { padding-left:4px; gap:6px; }
-      .library-header { padding:24px 18px; gap:10px; }
-      #search { width:100%; order:3; }
-      #grid { padding:8px 18px 32px; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:24px 16px; }
-      .reader-bar { padding:0 6px; gap:3px; }
-      #progress-label { max-width:28%; }
+    #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(560px,calc(100% - 32px)); max-height:60vh; overflow:auto; overflow-wrap:anywhere; background:var(--fg); color:var(--bg); border-left:3px solid var(--accent); padding:14px 20px; font-size:12px; border-radius:2px; box-shadow:var(--shadow); white-space:pre-line; animation:toast-in 500ms var(--ease); }
+    #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
+    @keyframes cover-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes view-in { from { opacity:0; } to { opacity:1; } }
+    @keyframes panel-in { from { opacity:0; transform:translateY(-6px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
+    @keyframes progress-in { from { transform:scaleX(0); } to { transform:scaleX(var(--fraction)); } }
+    @keyframes toast-in { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }
+    @media (min-width:1800px) { #grid { grid-template-columns:repeat(auto-fill,minmax(176px,1fr)); gap:44px 36px; } }
+    @media (max-width:1100px) { #sidebar { width:192px; } .library-tools { width:100%; } .search-field { flex:1; } #search { width:100%; } #grid { gap:28px 20px; } }
+    @media (max-width:650px) {
+      #library { flex-direction:column; }
+      #sidebar { width:100%; padding:16px 20px 0; display:grid; grid-template-columns:1fr auto; border-right:0; border-bottom:1px solid var(--line); }
+      .brand { padding:0; font-size:16px; gap:8px; }
+      .brand svg { width:22px; height:28px; }
+      .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
+      .sidebar-bottom { grid-column:2; grid-row:1; flex-direction:row; padding:0; margin:0; border:0; gap:8px; }
+      .sidebar-bottom .import { width:auto; padding:8px 10px; gap:8px; font-size:11px; }
+      .device-note { padding:0; }
+      #filters { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:16px 0 10px; overflow-x:auto; }
+      #filters button { flex-shrink:0; width:auto; font-size:11px; padding:6px 10px; margin:0; min-height:32px; }
+      #filters button[aria-current]::before { top:auto; bottom:0; left:10px; right:10px; width:auto; height:2px; }
+      #filters .section-label { padding:0 4px 0 12px; }
+      .library-content { padding:24px 20px 40px; }
+      .library-header { gap:20px; padding-bottom:20px; }
+      .heading .eyebrow { margin-bottom:8px; }
+      .heading h1 { font-size:30px; }
+      .library-tools { gap:12px; }
+      #grid { grid-template-columns:repeat(auto-fill,minmax(136px,1fr)); gap:28px 20px; }
+      .library-meta { margin:16px 0 24px; }
+      .placeholder { padding:16px 14px 16px 22px; }
+      .placeholder-title { font-size:18px; }
+      #empty,#no-results { padding:32px 0 16px; }
+      .empty-mark { width:88px; height:100px; margin-bottom:20px; }
+      #empty h2,#no-results h2 { font-size:24px; }
+      .reader-bar { padding:0 10px; gap:6px; }
+      #back span { display:none; }
+      #back { width:36px; padding:6px; }
+      .reader-actions { min-width:auto; gap:4px; }
+      #progress-label { max-width:28%; min-width:40px; font-size:10px; }
+      #prefs { right:12px; width:min(360px,calc(100% - 24px)); padding:16px; }
+      #text article { padding:0 24px; }
     }
     @media (hover:none) { .delete { opacity:1; } }
-    @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
   </style>
 </head>
 <body>
+  <svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-lamp" viewBox="0 0 32 40"><path d="M11 5h10l7 17H4L11 5Zm5 17v12M8 35h16M7 26h3m12 0h3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-toc" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h8M3 6h1m-1 6h1m-1 6h1"/></symbol>
+    <symbol id="i-device" viewBox="0 0 24 24"><path d="M4 4h16v12H4zM2 20h20"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v2m0 18v2M1 12h2m18 0h2M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></symbol>
+    <symbol id="i-dark" viewBox="0 0 24 24"><path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/></symbol>
+    <symbol id="i-delete" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
+  </defs></svg>
   <div id="library">
     <aside id="sidebar" aria-label="Bibliotheek">
-      <div class="brand"><svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#1d1b18"/><path d="M17 11h14l7 17H10z" fill="#e0a04a"/><path d="M24 28v10m-8 0h16" stroke="#e0a04a" stroke-width="3" stroke-linecap="round"/></svg>Leeslamp</div>
+      <div class="brand"><svg class="icon" aria-hidden="true"><use href="#i-lamp"/></svg>Leeslamp</div>
+      <div class="sidebar-heading eyebrow">Bibliotheek</div>
       <nav id="filters" aria-label="Boekenfilter"></nav>
-      <div class="sidebar-bottom"><button class="import" id="import-button">Importeren</button><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem">◐</button></div>
+      <div class="sidebar-bottom">
+        <button class="import" id="import-button">Importeren<svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span>Op dit apparaat</span><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
+      </div>
     </aside>
     <main>
-      <header class="library-header"><h1 id="filter-title">Alle boeken</h1><input id="search" type="search" placeholder="Zoeken" aria-label="Zoeken op titel of auteur"><select id="sort" aria-label="Sorteren"><option value="opened">Laatst gelezen</option><option value="title">Titel</option><option value="author">Auteur</option><option value="added">Toegevoegd</option></select></header>
-      <div id="grid"></div>
-      <div id="empty" hidden><h2>Sleep je boeken hierheen</h2><p>EPUB · MOBI · AZW3 · FB2 · CBZ · PDF · TXT · MD · HTML · DOCX</p><button class="import" id="empty-import">Importeren</button></div>
-      <p id="no-results" hidden>Geen boeken</p>
+      <div class="library-content">
+        <header class="library-header">
+          <div class="heading"><span class="eyebrow">Je eigen leesruimte</span><h1 id="filter-title">Alle boeken</h1></div>
+          <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur"></label><select id="sort" aria-label="Sorteren"><option value="opened">Laatst gelezen</option><option value="title">Titel</option><option value="author">Auteur</option><option value="added">Toegevoegd</option></select></div>
+        </header>
+        <div class="library-meta"><span id="library-count" role="status" aria-live="polite">0 boeken</span><span>Jouw boeken. Jouw tempo.</span></div>
+        <div id="grid"></div>
+        <div id="empty" hidden>
+          <svg class="empty-mark" viewBox="0 0 120 132" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M20 8h80v112H20zM26 8v112M36 100h48M36 105h28M9 120h102"/><path d="M50 32h20l10 25H40l10-25Zm10 25v25M47 83h26" stroke-width="1.5"/><path d="M44 64h4m24 0h4M56 90h8"/></svg>
+          <h2>Ruimte voor je volgende boek.</h2><p>Sleep je boeken hierheen.<br>Je bibliotheek begint met één goed verhaal.</p>
+          <button class="import" id="empty-import"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Boeken toevoegen</button>
+          <p class="formats">EPUB · MOBI · AZW · AZW3 · PRC · FB2 · FBZ · CBZ<br>PDF · TXT · MD · HTML · DOCX</p>
+        </div>
+        <div id="no-results" hidden><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><h2>Even verder zoeken.</h2><p>Geen boeken in deze selectie.<br>Probeer een andere titel, auteur of filter.</p><button id="reset-filters">Toon alle boeken</button></div>
+      </div>
     </main>
   </div>
   <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx">
-  <section id="reader" hidden aria-label="Boeklezer">
+  <section id="reader" hidden aria-label="Boeklezer" tabindex="-1">
     <div id="r-body"></div>
-    <div id="top-bar" class="reader-bar"><button id="back">‹ Bibliotheek</button><div id="r-title"></div><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false">☷</button><button id="aa" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false">Aa</button></div>
-    <div id="bottom-bar" class="reader-bar"><button id="prev" aria-label="Vorige pagina">‹</button><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks"><datalist id="ticks"></datalist><button id="next" aria-label="Volgende pagina">›</button><span id="progress-label">0%</span></div>
-    <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave"><h2>Inhoudsopgave</h2><div id="toc-list"></div></aside>
+    <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span>Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false">Aa</button></div></div>
+    <div id="bottom-bar" class="reader-bar"><button id="prev" title="Vorige pagina" aria-label="Vorige pagina"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button><div class="slider-wrap"><span class="slider-rail" aria-hidden="true"><span id="slider-fill"></span></span><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks"><datalist id="ticks"></datalist></div><button id="next" title="Volgende pagina" aria-label="Volgende pagina"><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button><span id="progress-label">0%</span></div>
+    <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave"><div class="panel-heading"><h2>Inhoud</h2><button class="panel-close" data-close-panel title="Inhoudsopgave sluiten" aria-label="Inhoudsopgave sluiten"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="toc-list"></div></aside>
     <aside id="prefs" class="popover" hidden aria-label="Leesvoorkeuren">
-      <div class="pref-group"><span class="pref-label">Thema</span><div id="themes"></div></div>
-      <div class="pref-group"><span class="pref-label">Lettertype</span><div id="fonts" class="segments"></div></div>
-      <div class="stepper"><span>Grootte</span><button data-step="size:-1" aria-label="Kleinere letters">−</button><output id="size-value">18</output><button data-step="size:1" aria-label="Grotere letters">+</button></div>
-      <div class="stepper"><span>Regelafstand</span><button data-step="lh:-0.1" aria-label="Kleinere regelafstand">−</button><output id="lh-value">1.5</output><button data-step="lh:0.1" aria-label="Grotere regelafstand">+</button></div>
-      <div class="stepper"><span>Breedte</span><button data-step="width:-1" aria-label="Bredere tekst">−</button><output id="width-value">2</output><button data-step="width:1" aria-label="Smallere tekst">+</button></div>
-      <div id="flow-row"><span class="pref-label">Weergave</span><div id="flows" class="segments"><button data-flow="paginated">Pagina</button><button data-flow="scrolled">Scrollen</button></div></div>
-      <label id="justify-row">Uitvullen<input id="justify" type="checkbox" checked></label>
+      <div class="panel-heading"><h2>Jouw leesruimte</h2><button class="panel-close" data-close-panel title="Leesvoorkeuren sluiten" aria-label="Leesvoorkeuren sluiten"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+      <div class="pref-group"><span class="pref-label">Licht &amp; papier</span><div id="themes" role="group" aria-label="Leesthema"></div></div>
+      <div class="pref-group"><span class="pref-label">Lettertype</span><div id="fonts" class="segments" role="group" aria-label="Lettertype"></div></div>
+      <div class="stepper"><span>Lettergrootte</span><button data-step="size:-1" title="Kleinere letters" aria-label="Kleinere letters">−</button><output id="size-value" aria-label="Lettergrootte">18</output><button data-step="size:1" title="Grotere letters" aria-label="Grotere letters">+</button></div>
+      <div class="stepper"><span>Regelafstand</span><button data-step="lh:-0.1" title="Kleinere regelafstand" aria-label="Kleinere regelafstand">−</button><output id="lh-value" aria-label="Regelafstand">1.5</output><button data-step="lh:0.1" title="Grotere regelafstand" aria-label="Grotere regelafstand">+</button></div>
+      <div class="stepper"><span>Tekstbreedte</span><button data-step="width:-1" title="Bredere tekst" aria-label="Bredere tekst">−</button><output id="width-value" aria-label="Breedtestand">2</output><button data-step="width:1" title="Smallere tekst" aria-label="Smallere tekst">+</button></div>
+      <div id="flow-row"><span class="pref-label">Weergave</span><div id="flows" class="segments" role="group" aria-label="Pagina of scrollen"><button data-flow="paginated">Pagina</button><button data-flow="scrolled">Scrollen</button></div></div>
+      <label id="justify-row">Tekst uitvullen<input id="justify" type="checkbox" checked></label>
     </aside>
   </section>
   <div id="toast" role="status" aria-live="polite" hidden></div>

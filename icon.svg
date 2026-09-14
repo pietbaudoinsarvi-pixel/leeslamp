@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <radialGradient id="glow"><stop stop-color="#f6ce80" stop-opacity=".45"/><stop offset="1" stop-color="#e0a04a" stop-opacity="0"/></radialGradient>
-  </defs>
-  <rect width="128" height="128" rx="29" fill="#1d1b18"/>
-  <ellipse cx="64" cy="85" rx="43" ry="26" fill="url(#glow)"/>
-  <path d="M64 68v34m-20 0h40" fill="none" stroke="#c8862f" stroke-width="6" stroke-linecap="round"/>
-  <path d="M46 28h36l18 43H28z" fill="#e0a04a"/>
-  <path d="M30 71h68" stroke="#f5cd83" stroke-width="3" stroke-linecap="round"/>
+  <style>
+    :root { --ground:#eaece7; --ink:#925331; }
+    @media (prefers-color-scheme:dark) { :root { --ground:#171c19; --ink:#d4a080; } }
+  </style>
+  <rect width="128" height="128" rx="4" fill="var(--ground)"/>
+  <g fill="none" stroke="var(--ink)" stroke-width="4">
+    <path d="M46 22h36l18 47H28zM64 69v34M42 106h44M33 80h9m44 0h9"/>
+  </g>
 </svg>

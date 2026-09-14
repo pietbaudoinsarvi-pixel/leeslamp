@@ -10,6 +10,13 @@ const el = (tag, className, text) => {
     if (text != null) node.textContent = text;
     return node;
 };
+const icon = name => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon'); svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(svg.namespaceURI, 'use');
+    use.setAttribute('href', `#i-${name}`); svg.append(use);
+    return svg;
+};
 let dbPromise;
 const database = () => dbPromise ??= new Promise((resolve, reject) => {
     const request = indexedDB.open('leeslamp', 1);
@@ -72,12 +79,12 @@ const report = (message, error) => { console.error(error); toast(message); };
 
 // App chrome and reader preferences are deliberately independent.
 const THEMES = {
-    dag: { bg: '#ffffff', fg: '#1a1a1a', link: '#2a6db0', dark: false },
-    sepia: { bg: '#f3ead7', fg: '#5a4632', link: '#8a5a2b', dark: false },
-    grijs: { bg: '#e4e4e2', fg: '#2b2b2b', link: '#3a6ea5', dark: false },
-    schemer: { bg: '#2d2b33', fg: '#d6d0c6', link: '#9fbfe6', dark: true },
-    nacht: { bg: '#1b1b1b', fg: '#c9c9c9', link: '#8ab4f8', dark: true },
-    zwart: { bg: '#000000', fg: '#b9b9b9', link: '#8ab4f8', dark: true },
+    dag: { bg: '#fffffc', fg: '#252b28', link: '#376455', dark: false },
+    sepia: { bg: '#f1e8d7', fg: '#514333', link: '#835329', dark: false },
+    grijs: { bg: '#e2e6e1', fg: '#303832', link: '#365f54', dark: false },
+    schemer: { bg: '#303735', fg: '#dce2d9', link: '#b7cfc2', dark: true },
+    nacht: { bg: '#181c1a', fg: '#cbd2c9', link: '#a9c9b9', dark: true },
+    zwart: { bg: '#000000', fg: '#bdc5bc', link: '#a9c9b9', dark: true },
 };
 const fonts = ['Lora', 'Lato', 'Georgia', 'Lexend', 'Boek'];
 const defaults = { theme: 'dag', font: 'Lora', size: 18, lh: 1.5, width: 2, flow: 'paginated', justify: true };
@@ -116,9 +123,9 @@ function applyMode() {
     const name = { auto: 'systeem', light: 'licht', dark: 'donker' }[mode];
     $('#mode').title = `Weergave: ${name}`;
     $('#mode').setAttribute('aria-label', `Weergave: ${name}`);
-    $('#mode').textContent = { auto: '◐', light: '☀', dark: '☾' }[mode];
+    $('#mode').replaceChildren(icon(mode));
     $('meta[name="theme-color"]').content = active ? THEMES[prefs.theme].bg
-        : mode === 'dark' || (mode === 'auto' && systemTheme.matches) ? '#151412' : '#f6f5f1';
+        : mode === 'dark' || (mode === 'auto' && systemTheme.matches) ? '#171c19' : '#f3f3ef';
 }
 $('#mode').addEventListener('click', () => {
     mode = { auto: 'light', light: 'dark', dark: 'auto' }[mode];
@@ -130,9 +137,12 @@ systemTheme.addEventListener('change', applyMode);
 // Library. Only metadata and small cover blobs are loaded on startup.
 let books = [], filter = 'all', query = '', searchTimer, importing = false;
 const coverURLs = new Map();
+// Stagger only covers not yet presented this session; searching never replays the grid.
+const presentedBooks = new Set();
 const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
 const filterName = () => filter === 'all' ? 'Alle boeken' : filter === 'recent' ? 'Laatst gelezen' : filter.toUpperCase();
 function renderFilters() {
+    const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
     if (!['all', 'recent'].includes(filter) && !books.some(b => b.ext === filter)) filter = 'all';
     const fragment = document.createDocumentFragment();
     const add = (value, label, count) => {
@@ -148,6 +158,7 @@ function renderFilters() {
     if (extensions.length) fragment.append(el('div', 'section-label', 'Formaat'));
     for (const ext of extensions) add(ext, ext.toUpperCase(), books.filter(b => b.ext === ext).length);
     $('#filters').replaceChildren(fragment);
+    if (focusedFilter) [...$('#filters').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filter-title').textContent = filterName();
 }
 function renderLibrary() {
@@ -160,11 +171,18 @@ function renderLibrary() {
         return (sort === 'opened' ? (b.opened ?? 0) - (a.opened ?? 0) : 0) || b.added - a.added;
     });
     const fragment = document.createDocumentFragment();
+    let arrival = 0;
     for (const book of visible) {
         const card = el('div', 'card');
         card.dataset.id = book.id;
+        if (!presentedBooks.has(book.id)) {
+            card.classList.add('arriving');
+            card.style.setProperty('--delay', `${Math.min(arrival++, 8) * 40}ms`);
+            presentedBooks.add(book.id);
+        }
         const open = el('button', 'book-open');
         open.setAttribute('aria-label', `${book.title} openen`);
+        open.title = `${book.title}${book.author ? ` · ${book.author}` : ''}`;
         const cover = el('span', 'cover');
         if (book.cover) {
             if (!coverURLs.has(book.id)) coverURLs.set(book.id, URL.createObjectURL(book.cover));
@@ -177,18 +195,26 @@ function renderLibrary() {
         } else {
             let hash = 0;
             for (const character of book.title) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-            cover.style.background = ['#657668', '#8d7569', '#647588', '#887f63', '#7c6f87', '#936f62'][Math.abs(hash) % 6];
-            cover.append(el('span', 'placeholder', book.title));
+            cover.classList.add('no-cover');
+            cover.style.setProperty('--cover-color', `var(--cover-${Math.abs(hash) % 6})`);
+            const placeholder = el('span', 'placeholder');
+            placeholder.append(el('span', 'placeholder-format', book.ext.toUpperCase()),
+                el('span', 'placeholder-title', book.title), el('span', 'placeholder-author', book.author || 'Leeslamp'));
+            cover.append(placeholder);
         }
         open.append(cover);
         if (book.fraction > 0) {
             const track = el('span', 'progress-track'), fill = el('span');
-            fill.style.width = `${clamp(book.fraction) * 100}%`;
+            fill.style.setProperty('--fraction', clamp(book.fraction));
             track.append(fill);
             open.append(track);
         }
         open.append(el('span', 'book-title', book.title), el('span', 'book-author', book.author));
-        const remove = el('button', 'delete', '×');
+        const meta = el('span', 'book-meta');
+        meta.append(el('span', '', book.ext.toUpperCase()), el('span', '', book.fraction > 0 ? `${Math.round(clamp(book.fraction) * 100)}% gelezen` : book.opened ? 'Geopend' : 'Ongelezen'));
+        open.append(meta);
+        const remove = el('button', 'delete');
+        remove.append(icon('delete'));
         remove.dataset.delete = 'true';
         remove.title = `${book.title} verwijderen`;
         remove.setAttribute('aria-label', remove.title);
@@ -196,9 +222,18 @@ function renderLibrary() {
         fragment.append(card);
     }
     $('#grid').replaceChildren(fragment);
+    $('#library-count').textContent = `${visible.length} ${visible.length === 1 ? 'boek' : 'boeken'}${visible.length !== books.length ? ` van ${books.length}` : ''}`;
     $('#empty').hidden = books.length !== 0;
     $('#no-results').hidden = !books.length || visible.length !== 0;
 }
+$('#grid').addEventListener('animationend', event => {
+    const card = event.target.closest('.card');
+    if (card && (event.animationName === 'progress-in' || (event.animationName === 'cover-in' && !card.querySelector('.progress-track')))) card.classList.remove('arriving');
+});
+$('#reset-filters').addEventListener('click', () => {
+    clearTimeout(searchTimer); filter = 'all'; query = ''; $('#search').value = '';
+    renderLibrary(); $('#search').focus();
+});
 $('#filters').addEventListener('click', e => {
     const button = e.target.closest('[data-filter]');
     if (button) { filter = button.dataset.filter; renderLibrary(); }
@@ -219,6 +254,7 @@ $('#grid').addEventListener('click', async e => {
             await bookTransaction(record, null, true);
             URL.revokeObjectURL(coverURLs.get(record.id));
             coverURLs.delete(record.id);
+            presentedBooks.delete(record.id);
             books = books.filter(b => b.id !== record.id);
             renderLibrary();
         } catch (error) { report('Verwijderen is mislukt.', error); }
@@ -389,31 +425,40 @@ function progress(session, fraction, loc, label) {
     session.record.opened = Date.now();
     session.dirty = true;
     $('#slider').value = session.record.fraction;
+    $('#slider-fill').style.setProperty('--fraction', session.record.fraction);
     $('#progress-label').textContent = label || `${Math.round(session.record.fraction * 100)}%`;
     saveProgress(session);
 }
+function hideBars(hidden) {
+    $('#reader').classList.toggle('bars-hidden', hidden);
+    $('#top-bar').inert = $('#bottom-bar').inert = hidden;
+}
 function showBars() {
     if (!active) return;
-    $('#reader').classList.remove('bars-hidden');
+    hideBars(false);
     clearTimeout(active.barTimer);
     active.barTimer = setTimeout(() => {
-        if ($('#prefs').hidden && $('#toc').hidden) $('#reader').classList.add('bars-hidden');
+        if ($('#prefs').hidden && $('#toc').hidden && !$('#reader').querySelector('.reader-bar :focus-visible')) hideBars(true);
     }, 2500);
 }
 function closePanels() {
+    const focusedPanel = document.activeElement?.closest('.popover');
     $('#prefs').hidden = $('#toc').hidden = true;
     $('#aa').setAttribute('aria-expanded', 'false');
     $('#toc-button').setAttribute('aria-expanded', 'false');
+    if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : '#toc-button').focus({ preventScroll: true });
 }
 function contentClick(event) {
     const doc = event.target.ownerDocument;
     if (event.target.closest('a,button,input,select,textarea,[contenteditable]') || !doc.getSelection()?.isCollapsed) return;
     if (!$('#prefs').hidden || !$('#toc').hidden) { closePanels(); showBars(); return; }
     if ($('#reader').classList.contains('bars-hidden')) showBars();
-    else { clearTimeout(active?.barTimer); $('#reader').classList.add('bars-hidden'); }
+    else { clearTimeout(active?.barTimer); hideBars(true); }
 }
 function keydown(event) {
     if (!active || event.defaultPrevented) return;
+    // Tab can always reach reader controls, even when pointer chrome is hidden.
+    if (event.key === 'Tab') showBars();
     if (event.key === 'Escape') {
         event.preventDefault();
         if (!$('#toc').hidden || !$('#prefs').hidden) { closePanels(); showBars(); }
@@ -450,11 +495,14 @@ async function openBook(record) {
     $('#toc-button').hidden = true;
     $('#ticks').replaceChildren(); $('#toc-list').replaceChildren();
     $('#slider').value = record.fraction;
+    $('#slider-fill').style.setProperty('--fraction', clamp(record.fraction));
     $('#progress-label').textContent = `${Math.round(record.fraction * 100)}%`;
     $('#r-body').replaceChildren(Object.assign(el('div', '', 'Boek openen…'), { id: 'loading' }));
     $('#slider').disabled = $('#prev').disabled = $('#next').disabled = true;
     applyPreferences(); showBars();
+    $('#reader').focus({ preventScroll: true });
     listen(session, document, 'keydown', keydown);
+    listen(session, $('#reader'), 'focusin', showBars);
     listen(session, $('#reader'), 'pointermove', showBars, { passive: true });
     listen(session, document, 'pointerdown', e => {
         if (!e.target.closest('#prefs,#aa,#toc,#toc-button')) closePanels();
@@ -504,7 +552,7 @@ async function closeBook() {
     coverURLs.clear();
     closePanels(); $('#toc-list').replaceChildren(); $('#r-body').replaceChildren();
     $('#reader').hidden = true; $('#library').hidden = false;
-    $('#reader').classList.remove('bars-hidden');
+    hideBars(false);
     document.title = 'Leeslamp'; applyMode();
     closing = saveProgress(session, true);
     await closing;
@@ -517,11 +565,14 @@ $('#back').addEventListener('click', () => void closeBook());
 $('#aa').addEventListener('click', () => {
     const open = $('#prefs').hidden; closePanels(); $('#prefs').hidden = !open;
     $('#aa').setAttribute('aria-expanded', String(open)); showBars();
+    if (open) $('#themes button[aria-pressed="true"]')?.focus({ preventScroll: true });
 });
 $('#toc-button').addEventListener('click', () => {
     const open = $('#toc').hidden; closePanels(); $('#toc').hidden = !open;
     $('#toc-button').setAttribute('aria-expanded', String(open)); showBars();
+    if (open) $('#toc-list [tabindex="0"]')?.focus({ preventScroll: true });
 });
+for (const button of document.querySelectorAll('[data-close-panel]')) button.addEventListener('click', () => { closePanels(); showBars(); });
 
 // Foliate: document listeners are removed by the session's AbortController.
 async function openFoliate(session, file) {
@@ -580,6 +631,7 @@ $('#slider').addEventListener('input', e => {
     const session = active;
     if (!session?.ready) return;
     const fraction = clamp(e.target.value);
+    $('#slider-fill').style.setProperty('--fraction', fraction);
     if (session.view) {
         const view = session.view;
         const action = view.isFixedLayout && !view.getSectionFractions().length
@@ -822,7 +874,9 @@ function styleFixedDocument(doc) {
 for (const [name, theme] of Object.entries(THEMES)) {
     const button = el('button'); button.dataset.theme = name;
     button.title = name[0].toUpperCase() + name.slice(1);
-    button.setAttribute('aria-label', button.title); button.style.background = theme.bg;
+    button.setAttribute('aria-label', button.title);
+    button.style.setProperty('--sample-bg', theme.bg); button.style.setProperty('--sample-fg', theme.fg);
+    button.append(el('span', 'theme-sample', 'A'), el('span', 'theme-name', button.title));
     $('#themes').append(button);
 }
 for (const font of fonts) {
@@ -831,6 +885,9 @@ for (const font of fonts) {
     $('#fonts').append(button);
 }
 function syncPreferences() {
+    $('#themes').style.setProperty('--selected', Object.keys(THEMES).indexOf(prefs.theme));
+    $('#fonts').style.setProperty('--selected', fonts.indexOf(prefs.font));
+    $('#flows').style.setProperty('--selected', prefs.flow === 'paginated' ? 0 : 1);
     for (const node of $('#themes').children) node.setAttribute('aria-pressed', String(node.dataset.theme === prefs.theme));
     for (const node of $('#fonts').children) node.setAttribute('aria-pressed', String(node.dataset.font === prefs.font));
     for (const node of $('#flows').children) node.setAttribute('aria-pressed', String(node.dataset.flow === prefs.flow));
