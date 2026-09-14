@@ -1253,7 +1253,8 @@ async function openBook(record) {
     if (closing) await closing;
     if (active) return;
     const session = { record, controller: new AbortController(), frames: new Set(), cleanups: [],
-        writes: Promise.resolve(), lastSave: 0, dirty: false, ready: false, urls: new Set() };
+        writes: Promise.resolve(), lastSave: 0, dirty: false, ready: false, urls: new Set(),
+        wheelDelta: 0, wheelLock: false, wheelResetTimer: null, wheelLockTimer: null };
     active = session;
     $('#library').hidden = true; $('#reader').hidden = false;
     $('#r-title').textContent = record.title;
@@ -1321,6 +1322,7 @@ async function closeBook() {
     active = null;
     session.controller.abort();
     clearTimeout(session.barTimer); clearTimeout(session.saveTimer); clearTimeout(session.resizeTimer);
+    clearTimeout(session.wheelResetTimer); clearTimeout(session.wheelLockTimer);
     for (const id of session.frames) cancelAnimationFrame(id);
     for (const cleanup of session.cleanups) { try { cleanup(); } catch (error) { console.warn(error); } }
     if (session.view && !session.openingView) disposeView(session.view);
@@ -1356,10 +1358,31 @@ async function openFoliate(session, file) {
     session.view = view;
     session.openingView = true;
     $('#r-body').append(view);
+    const handleWheel = event => {
+        if (!live(session) || session.record.kind !== 'foliate' || prefs.flow !== 'paginated' || session.wheelLock || !session.view) return;
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? $('#r-body').clientHeight : 1;
+        const deltaX = event.deltaX * unit, deltaY = event.deltaY * unit;
+        const useX = Math.abs(deltaX) > Math.abs(deltaY);
+        const delta = useX ? deltaX : deltaY;
+        if (!delta) return;
+        session.wheelDelta = session.wheelDelta + delta;
+        clearTimeout(session.wheelResetTimer);
+        session.wheelResetTimer = setTimeout(() => { if (live(session)) session.wheelDelta = 0; }, 150);
+        if (Math.abs(session.wheelDelta) < 48) return;
+        const horizontal = session.wheelDelta > 0;
+        const action = useX ? (horizontal ? session.view.goRight() : session.view.goLeft()) : (session.wheelDelta > 0 ? session.view.next() : session.view.prev());
+        session.wheelDelta = 0;
+        clearTimeout(session.wheelLockTimer);
+        session.wheelLock = true;
+        session.wheelLockTimer = setTimeout(() => { if (live(session)) session.wheelLock = false; }, 380);
+        Promise.resolve(action).catch(error => report(() => t('turnFailed'), error));
+    };
+    listen(session, $('#r-body'), 'wheel', handleWheel, { passive: true });
     listen(session, view, 'load', ({ detail: { doc } }) => {
         if (view.isFixedLayout) styleFixedDocument(doc);
         listen(session, doc, 'keydown', keydown);
         listen(session, doc, 'pointermove', showBars, { passive: true });
+        listen(session, doc, 'wheel', handleWheel, { passive: true });
         listen(session, doc, 'click', contentClick);
     });
     listen(session, view, 'relocate', ({ detail }) => {
@@ -1689,6 +1712,7 @@ function applyPreferences(changed) {
         if (!changed || ['flow', 'width'].includes(changed)) {
             renderer.setAttribute('flow', prefs.flow); renderer.setAttribute('max-column-count', '2');
             renderer.setAttribute('max-inline-size', widthPx()); renderer.setAttribute('gap', '6%'); renderer.setAttribute('margin', '56px');
+            renderer.setAttribute('animated', '');
         }
         if (!changed || !['flow', 'width'].includes(changed)) {
             if (renderer.setStyles) renderer.setStyles(bookCSS());
