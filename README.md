@@ -11,7 +11,7 @@ Koper markeert acties en voortgang. Vierkante vlakken en 2 px hoeken houden de v
 Zes zelfstandige leesmaterialen: Dag, Sepia, Grijs, Schemer, Nacht en Zwart.
 Bediening verdwijnt tijdens lezen; Aa en Inhoud verschijnen als lichte, scherp begrensde panelen.
 Beweging: 150 ms voor aanraken, 500–600 ms voor onthullen; alleen transform en opacity.
-Omslagen verschijnen eenmaal met 40 ms verspringing (begrensd op 320 ms); voortgang volgt na 300 ms.
+Omslagen verschijnen eenmaal met 40 ms verspringing (begrensd op 320 ms); de voortgangsbalk is direct zichtbaar.
 Reduced motion schakelt alle animaties uit. Op smalle schermen wordt de zijrail een bovenrail.
 
 Een rustige, lokale ebooklezer met bibliotheek, leesvoortgang en zes leesthema’s.
@@ -21,10 +21,13 @@ Start lokaal met `npx serve .` of een andere statische HTTP-server en open het g
 Deploy op Vercel als statische site, zonder buildopdracht; publiceer de repositoryroot.
 Los geïmporteerde boeken en voortgang blijven in IndexedDB op dit apparaat; voorkeuren staan in localStorage.
 Importeer via Importeren of slepen. Automatisch deelt elk boek afzonderlijk in; je kunt ook voor de hele selectie een categorie, Geen categorie of + Nieuwe categorie… kiezen.
-Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart wijzig je de categorie.
+Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart open je de boekacties, waaronder de categoriekeuze.
 Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk.
 De app werkt offline na de eerste online laadbeurt; PDF/DOCX/Markdown en fonts moeten eerst online geladen zijn.
 Vereist een moderne browser met native adoptedStyleSheets; HTTPS of localhost voor PWA, PNG-iconen volgen apart.
+
+## Nu aan het lezen / Laatst gelezen
+Nu aan het lezen toont geopende boeken met meer dan 0% en minder dan 98% voortgang die niet als gelezen zijn gemarkeerd, op volgorde van laatst openen. Elke kaart heeft een voortgangsbalk en percentage; in deze selectie zijn die extra benadrukt. Via ⋯ kun je een boek uit Laatst gelezen halen zonder de leespositie te verliezen, of het markeren als gelezen. Gelezen boeken blijven in Laatst gelezen staan; opnieuw openen wist de gelezenmarkering. Markeren als ongelezen wist de voortgang en leespositie en haalt het boek uit beide lijsten. Lijst leegmaken vraagt bevestiging en verwijdert alleen de momenteel getoonde boeken uit Laatst gelezen, ook bij een zoekopdracht, met behoud van hun leespositie. Boeken verschijnen na opnieuw openen weer in Laatst gelezen en, als hun voortgang voldoet, in Nu aan het lezen.
 
 ## Mappen en categorieën
 Gebruik Map koppelen in Edge/Chrome of sleep een map naar de bibliotheek.

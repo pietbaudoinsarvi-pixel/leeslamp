@@ -8,6 +8,14 @@ const STRINGS = {
         description: 'Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.',
         library: 'Bibliotheek',
         allBooks: 'Alle boeken',
+        currentlyReading: 'Nu aan het lezen',
+        currentlyReadingEmpty: 'Open een boek en het verschijnt hier.',
+        bookActions: 'Boekacties: {title}',
+        removeRecent: 'Uit Laatst gelezen halen',
+        markFinished: 'Markeren als gelezen',
+        markUnread: 'Markeren als ongelezen',
+        clearRecent: 'Lijst leegmaken',
+        confirmClearRecent: 'Laatst gelezen leegmaken? Je leesvoortgang blijft bewaard.',
         recent: 'Laatst gelezen',
         categories: 'Categorieën',
         format: 'Formaat',
@@ -148,6 +156,14 @@ const STRINGS = {
         description: 'A quiet home for your books. Read locally with Leeslamp.',
         library: 'Library',
         allBooks: 'All books',
+        currentlyReading: 'Currently reading',
+        currentlyReadingEmpty: 'Open a book and it will appear here.',
+        bookActions: 'Book actions: {title}',
+        removeRecent: 'Remove from Recently read',
+        markFinished: 'Mark as finished',
+        markUnread: 'Mark as unread',
+        clearRecent: 'Clear list',
+        confirmClearRecent: 'Clear Recently read? Your reading progress will be preserved.',
         recent: 'Recently read',
         categories: 'Categories',
         format: 'Format',
@@ -480,14 +496,16 @@ const coverBlobs = new Map();
 const presentedBooks = new Set();
 const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
 const visibleBooks = () => books.filter(book => !book.hidden);
+const isCurrentlyReading = book => Boolean(book.opened) && book.fraction > 0 && book.finished !== true && book.fraction < 0.98;
+let listedBooks = [];
 const categories = () => [...new Set(visibleBooks().map(book => book.category))].sort(collator.compare);
 const categoryFilter = () => filter.startsWith('category:');
 const filterName = () => categoryFilter() ? filter.slice(9) || t('noCategory')
-    : filter === 'all' ? t('allBooks') : filter === 'recent' ? t('recent') : filter.toUpperCase();
+    : filter === 'all' ? t('allBooks') : filter === 'reading' ? t('currentlyReading') : filter === 'recent' ? t('recent') : filter.toUpperCase();
 function renderFilters() {
     const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
     const visible = visibleBooks();
-    if (!['all', 'recent'].includes(filter) && !visible.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
+    if (!['all', 'reading', 'recent'].includes(filter) && !visible.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
     const fragment = document.createDocumentFragment();
     const add = (value, label, count) => {
         const button = el('button', '', label);
@@ -497,6 +515,7 @@ function renderFilters() {
         fragment.append(button);
     };
     add('all', t('allBooks'), visible.length);
+    add('reading', t('currentlyReading'), visible.filter(isCurrentlyReading).length);
     add('recent', t('recent'), visible.filter(b => b.opened).length);
     if (visible.length) fragment.append(el('div', 'section-label', t('categories')));
     for (const category of categories()) add(`category:${category}`, category || t('noCategory'), visible.filter(b => b.category === category).length);
@@ -509,9 +528,10 @@ function renderFilters() {
 }
 function renderLibrary() {
     renderFilters();
-    const sort = $('#sort').value;
+    const sort = filter === 'reading' ? 'opened' : $('#sort').value;
+    $('#sort').hidden = filter === 'reading';
     const allBooks = visibleBooks();
-    const visible = allBooks.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'recent' ? b.opened : b.ext === filter))
+    const visible = allBooks.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'reading' ? isCurrentlyReading(b) : filter === 'recent' ? b.opened : b.ext === filter))
         && `${b.title} ${b.author}`.toLocaleLowerCase('nl').includes(query));
     visible.sort((a, b) => {
         if (sort === 'title' || sort === 'author') return collator.compare(a[sort], b[sort]) || collator.compare(a.title, b.title);
@@ -559,15 +579,14 @@ function renderLibrary() {
             cover.append(placeholder);
         }
         open.append(cover);
-        if (book.fraction > 0) {
-            const track = el('span', 'progress-track'), fill = el('span');
-            fill.style.setProperty('--fraction', clamp(book.fraction));
-            track.append(fill);
-            open.append(track);
-        }
+        const track = el('span', 'progress-track'), fill = el('span');
+        track.setAttribute('aria-hidden', 'true');
+        fill.style.setProperty('--fraction', clamp(book.fraction));
+        track.append(fill);
+        open.append(track);
         open.append(el('span', 'book-title', book.title), el('span', 'book-author', book.author));
         const meta = el('span', 'book-meta');
-        meta.append(el('span', '', book.ext.toUpperCase()), el('span', '', book.fraction > 0 ? t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) }) : book.opened ? t('opened') : t('unread')));
+        meta.append(el('span', '', book.ext.toUpperCase()), el('span', 'book-percent', t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) })));
         open.append(meta);
         const remove = el('button', 'delete');
         remove.append(icon('delete'));
@@ -575,23 +594,30 @@ function renderLibrary() {
         remove.title = t(book.source.kind === 'fs' ? 'hideBook' : 'deleteBook', { title: book.title });
         remove.setAttribute('aria-label', remove.title);
         const change = el('button', 'delete category-change', '⋯');
-        change.dataset.category = 'true';
-        change.title = t('changeCategory', { title: book.title });
+        change.dataset.actions = 'true';
+        change.setAttribute('aria-haspopup', 'dialog');
+        change.title = t('bookActions', { title: book.title });
         change.setAttribute('aria-label', change.title);
         change.disabled = remove.disabled = importing;
         card.append(open, change, remove);
         fragment.append(card);
     }
+    $('#grid').classList.toggle('currently-reading', filter === 'reading');
     $('#grid').replaceChildren(fragment);
+    listedBooks = visible;
     // Detach every old image before revoking URLs it could still request lazily.
     for (const url of retiredURLs) URL.revokeObjectURL(url);
     $('#library-count').textContent = visible.length === allBooks.length ? t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }) : t('countOf', { count: visible.length, total: allBooks.length });
-    $('#empty').hidden = allBooks.length !== 0;
-    $('#no-results').hidden = !allBooks.length || visible.length !== 0;
+    $('#clear-recent').hidden = filter !== 'recent';
+    $('#clear-recent').disabled = importing || !visible.length;
+    $('#empty').hidden = allBooks.length !== 0 || filter === 'reading';
+    $('#no-results').hidden = (!allBooks.length && filter !== 'reading') || visible.length !== 0;
+    localize($('#no-results h2'), filter === 'reading' && !query ? 'currentlyReading' : 'noResultsTitle');
+    localize($('#no-results p'), filter === 'reading' && !query ? 'currentlyReadingEmpty' : 'noResultsText');
 }
 $('#grid').addEventListener('animationend', event => {
     const card = event.target.closest('.card');
-    if (card && (event.animationName === 'progress-in' || (event.animationName === 'cover-in' && !card.querySelector('.progress-track')))) card.classList.remove('arriving');
+    if (card && event.animationName === 'cover-in') card.classList.remove('arriving');
 });
 $('#reset-filters').addEventListener('click', () => {
     clearTimeout(searchTimer); filter = 'all'; query = ''; $('#search').value = '';
@@ -611,8 +637,20 @@ $('#grid').addEventListener('click', async e => {
     if (!card) return;
     const record = books.find(b => b.id === card.dataset.id);
     if (!record) return;
-    if (e.target.closest('[data-category]')) {
+    if (e.target.closest('[data-actions]')) {
         if (importing) return;
+        const action = await chooseBookAction(record);
+        if (!action || importing) return;
+        if (action !== 'category') {
+            const changes = action === 'removeRecent' ? { opened: null }
+                : action === 'markFinished' ? { finished: true }
+                : { finished: false, fraction: 0, loc: null, opened: null };
+            try {
+                await put('books', { ...record, ...changes });
+                Object.assign(record, changes); renderLibrary();
+            } catch (error) { report(() => t('progressFailed'), error); }
+            return;
+        }
         const category = await chooseCategory(record.category, true);
         if (category === null) return;
         try {
@@ -639,6 +677,35 @@ $('#grid').addEventListener('click', async e => {
             renderLibrary();
         } catch (error) { report(() => t('deleteFailed'), error); }
     } else if (e.target.closest('.book-open')) await openBook(record);
+});
+
+function chooseBookAction(record) {
+    const dialog = $('#book-actions');
+    if (dialog.open) return Promise.resolve('');
+    localize($('#book-actions-title'), 'bookActions', { title: record.title });
+    localize($('#book-action-category'), 'changeCategory', { title: record.title });
+    const finished = record.finished === true;
+    const toggle = $('#book-action-finished');
+    toggle.value = finished ? 'markUnread' : 'markFinished';
+    localize(toggle, toggle.value);
+    dialog.returnValue = '';
+    return new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(dialog.returnValue), { once: true });
+        dialog.showModal();
+    });
+}
+$('#clear-recent').addEventListener('click', async () => {
+    if (filter !== 'recent' || importing || !listedBooks.length) return;
+    const records = [...listedBooks];
+    if (!confirm(t('confirmClearRecent'))) return;
+    $('#clear-recent').disabled = true;
+    try {
+        await tx('books', 'readwrite', store => {
+            for (const record of records) store.put({ ...record, opened: null });
+        });
+        for (const record of records) record.opened = null;
+    } catch (error) { report(() => t('progressFailed'), error); }
+    renderLibrary();
 });
 
 // Lazy format helpers and sequential import.
@@ -768,6 +835,7 @@ function setImporting(value) {
     importing = value;
     for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
     for (const button of $('#grid').querySelectorAll('.delete')) button.disabled = value;
+    $('#clear-recent').disabled = value || !listedBooks.length;
     $('#rescan').hidden = !roots.some(root => root.linked);
 }
 const filenameTitle = name => name.replace(/\.[^.]+$/, '');
@@ -1092,7 +1160,7 @@ function saveProgress(session, final = false) {
         const request = store.get(session.record.id);
         request.onsuccess = () => {
             const current = request.result || session.record;
-            store.put({ ...current, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened });
+            store.put({ ...current, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened, finished: session.record.finished });
         };
         return request;
     })).catch(error => {
@@ -1221,7 +1289,7 @@ async function openBook(record) {
         else await openText(session, file);
         if (!live(session)) return;
         session.ready = true;
-        record.opened = Date.now(); session.dirty = true;
+        record.opened = Date.now(); record.finished = false; session.dirty = true;
         saveProgress(session);
         $('#loading')?.remove();
         $('#slider').disabled = $('#prev').disabled = $('#next').disabled = false;
