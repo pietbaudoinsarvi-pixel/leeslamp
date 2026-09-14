@@ -98,6 +98,7 @@ const STRINGS = {
         hideBook: '{title} verbergen',
         changeCategory: 'Categorie wijzigen: {title}',
         percentRead: '{percent}% gelezen',
+        finishedLabel: 'Gelezen',
         opened: 'Geopend',
         unread: 'Ongelezen',
         bookCountOne: '{count} boek',
@@ -246,6 +247,7 @@ const STRINGS = {
         hideBook: 'Hide {title}',
         changeCategory: 'Change category: {title}',
         percentRead: '{percent}% read',
+        finishedLabel: 'Finished',
         opened: 'Opened',
         unread: 'Unread',
         bookCountOne: '{count} book',
@@ -586,7 +588,7 @@ function renderLibrary() {
         open.append(track);
         open.append(el('span', 'book-title', book.title), el('span', 'book-author', book.author));
         const meta = el('span', 'book-meta');
-        meta.append(el('span', '', book.ext.toUpperCase()), el('span', 'book-percent', t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) })));
+        meta.append(el('span', '', book.ext.toUpperCase()), el('span', 'book-percent', book.finished === true ? t('finishedLabel') : t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) })));
         open.append(meta);
         const remove = el('button', 'delete');
         remove.append(icon('delete'));
@@ -685,6 +687,8 @@ function chooseBookAction(record) {
     localize($('#book-actions-title'), 'bookActions', { title: record.title });
     localize($('#book-action-category'), 'changeCategory', { title: record.title });
     const finished = record.finished === true;
+    const recentButton = $('#book-actions [value="removeRecent"]');
+    if (recentButton) recentButton.hidden = !record.opened;
     const toggle = $('#book-action-finished');
     toggle.value = finished ? 'markUnread' : 'markFinished';
     localize(toggle, toggle.value);
