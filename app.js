@@ -1,6 +1,279 @@
 import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 
+const STRINGS = {
+    nl: {
+        appTitle: 'Leeslamp · Je eigen leesruimte',
+        description: 'Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.',
+        library: 'Bibliotheek',
+        allBooks: 'Alle boeken',
+        recent: 'Laatst gelezen',
+        categories: 'Categorieën',
+        format: 'Formaat',
+        import: 'Importeren',
+        linkFolder: 'Map koppelen',
+        importFolder: 'Map importeren',
+        rescan: 'Opnieuw scannen',
+        device: 'Op dit apparaat',
+        tagline: 'Je eigen leesruimte',
+        pace: 'Jouw boeken. Jouw tempo.',
+        searchPlaceholder: 'Titel of auteur',
+        searchLabel: 'Zoeken op titel of auteur',
+        sort: 'Sorteren',
+        title: 'Titel',
+        author: 'Auteur',
+        added: 'Toegevoegd',
+        emptyTitle: 'Ruimte voor je volgende boek.',
+        emptyText: 'Sleep je boeken hierheen.\nJe bibliotheek begint met één goed verhaal.',
+        addBooks: 'Boeken toevoegen',
+        noResultsTitle: 'Even verder zoeken.',
+        noResultsText: 'Geen boeken in deze selectie.\nProbeer een andere titel, auteur of filter.',
+        resetFilters: 'Toon alle boeken',
+        category: 'Categorie',
+        chooseCategory: 'Kies een categorie',
+        newCategory: 'Nieuwe categorie',
+        cancel: 'Annuleren',
+        save: 'Opslaan',
+        noCategory: 'Geen categorie',
+        addCategory: '+ Nieuwe categorie…',
+        reader: 'Boeklezer',
+        back: 'Terug naar bibliotheek',
+        toc: 'Inhoudsopgave',
+        readingPrefs: 'Leesvoorkeuren',
+        prev: 'Vorige pagina',
+        next: 'Volgende pagina',
+        readingProgress: 'Leesvoortgang',
+        contents: 'Inhoud',
+        closeToc: 'Inhoudsopgave sluiten',
+        readingSpace: 'Jouw leesruimte',
+        closePrefs: 'Leesvoorkeuren sluiten',
+        paper: 'Licht & papier',
+        readingTheme: 'Leesthema',
+        font: 'Lettertype',
+        size: 'Lettergrootte',
+        smaller: 'Kleinere letters',
+        larger: 'Grotere letters',
+        lineHeight: 'Regelafstand',
+        lessLineHeight: 'Kleinere regelafstand',
+        moreLineHeight: 'Grotere regelafstand',
+        width: 'Tekstbreedte',
+        wider: 'Bredere tekst',
+        narrower: 'Smallere tekst',
+        widthSetting: 'Breedtestand',
+        layout: 'Weergave',
+        layoutLabel: 'Pagina of scrollen',
+        page: 'Pagina',
+        scroll: 'Scrollen',
+        justify: 'Tekst uitvullen',
+        filters: 'Boekenfilter',
+        noScript: 'Schakel JavaScript in om je boeken te lezen.',
+        drop: 'Laat los om toe te voegen',
+        languageSwitch: 'Taal: Nederlands. Wissel naar Engels.',
+        publisherFont: 'Boek',
+        theme_dag: 'Dag',
+        theme_sepia: 'Sepia',
+        theme_grijs: 'Grijs',
+        theme_schemer: 'Schemer',
+        theme_nacht: 'Nacht',
+        theme_zwart: 'Zwart',
+        mode_auto: 'Weergave: systeem',
+        mode_light: 'Weergave: licht',
+        mode_dark: 'Weergave: donker',
+        openBook: '{title} openen',
+        deleteBook: '{title} verwijderen',
+        hideBook: '{title} verbergen',
+        changeCategory: 'Categorie wijzigen: {title}',
+        percentRead: '{percent}% gelezen',
+        opened: 'Geopend',
+        unread: 'Ongelezen',
+        bookCountOne: '{count} boek',
+        bookCountOther: '{count} boeken',
+        countOf: '{count} van {total}',
+        confirmHide: '"{title}" verbergen? Het bestand blijft in de map staan.',
+        confirmDelete: '"{title}" verwijderen?',
+        importProgress: 'Importeren… {current}/{total}',
+        addedOne: '{count} boek toegevoegd',
+        addedOther: '{count} boeken toegevoegd',
+        scanFolder: 'Scannen… {name}',
+        scanProgress: 'Scannen… {current}/{total}',
+        scanResult: '{found} boeken gevonden, {added} nieuw',
+        scanDenied: '{found} boeken gevonden, {added} nieuw\nGeen leestoegang: {names}. Bestaande boeken behouden.',
+        unsupportedFile: '{name}: Dit bestandstype wordt niet ondersteund',
+        metadataSkipped: '{name}: metadata overgeslagen',
+        importFailedFile: '{name}: importeren mislukt',
+        folderIncomplete: '{name}: map niet volledig leesbaar, bestaande boeken behouden',
+        metadataMissing: '{name}: metadata niet beschikbaar',
+        fileMissing: 'Bestand niet gevonden: {name}',
+        openFailed: '“{title}” kon niet worden geopend. Controleer het bestand en je verbinding.',
+        pageNumber: 'Pagina {page}',
+        pageProgress: 'Pagina {page} / {total}',
+        chapterProgress: 'Hoofdstuk {chapter} · {percent}%',
+        sectionProgress: '{section} · {percent}%',
+        percent: '{percent}%',
+        pageFailed: 'Pagina {page} kon niet worden getoond.',
+        bookTitle: '{title} · {app}',
+        storageBlocked: 'Sluit andere Leeslamp-tabbladen om de opslag te openen.',
+        storageFailed: 'Opslag mislukt',
+        prefsFailed: 'Je voorkeuren konden niet worden opgeslagen.',
+        categoryFailed: 'Categorie opslaan is mislukt.',
+        deleteFailed: 'Verwijderen is mislukt.',
+        downloadFailed: 'Download mislukt',
+        coverFailed: 'Omslag kon niet worden gemaakt',
+        importBusy: 'Er worden al boeken geïmporteerd. Probeer het zo opnieuw.',
+        importRunning: 'Er loopt al een import',
+        selectFolder: 'Kies een map',
+        folderAccess: 'Geen leestoegang tot de map',
+        linkFailed: 'Map koppelen is mislukt.',
+        scanFailed: 'Scannen is mislukt. Probeer opnieuw.',
+        addFailed: 'Toevoegen is mislukt. Gebruik Importeren of de mapknop.',
+        progressFailed: 'Je leesvoortgang kon niet worden opgeslagen.',
+        locationFailed: 'Deze locatie kon niet worden geopend.',
+        opening: 'Boek openen…',
+        readAccess: 'Geen leestoegang',
+        fileStorageMissing: 'Bestand ontbreekt in de opslag',
+        turnFailed: 'Bladeren is mislukt.',
+        readPDF: 'PDF lezen',
+        readText: 'Tekst lezen',
+        untitled: 'Zonder titel',
+        libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
+    },
+    en: {
+        appTitle: 'Leeslamp · Your reading space',
+        description: 'A quiet home for your books. Read locally with Leeslamp.',
+        library: 'Library',
+        allBooks: 'All books',
+        recent: 'Recently read',
+        categories: 'Categories',
+        format: 'Format',
+        import: 'Import',
+        linkFolder: 'Link folder',
+        importFolder: 'Import folder',
+        rescan: 'Rescan',
+        device: 'On this device',
+        tagline: 'A space to get lost in a book',
+        pace: 'Your books. Your pace.',
+        searchPlaceholder: 'Title or author',
+        searchLabel: 'Search by title or author',
+        sort: 'Sort by',
+        title: 'Title',
+        author: 'Author',
+        added: 'Date added',
+        emptyTitle: 'Make room for your next read.',
+        emptyText: 'Drop your books here.\nOne good story is all it takes to begin.',
+        addBooks: 'Add books',
+        noResultsTitle: 'Keep looking.',
+        noResultsText: 'No books match this selection.\nTry another title, author or filter.',
+        resetFilters: 'Show all books',
+        category: 'Category',
+        chooseCategory: 'Choose a category',
+        newCategory: 'New category',
+        cancel: 'Cancel',
+        save: 'Save',
+        noCategory: 'No category',
+        addCategory: '+ New category…',
+        reader: 'Book reader',
+        back: 'Back to library',
+        toc: 'Table of contents',
+        readingPrefs: 'Reading preferences',
+        prev: 'Previous page',
+        next: 'Next page',
+        readingProgress: 'Reading progress',
+        contents: 'Contents',
+        closeToc: 'Close table of contents',
+        readingSpace: 'Your reading space',
+        closePrefs: 'Close reading preferences',
+        paper: 'Light & paper',
+        readingTheme: 'Reading theme',
+        font: 'Font',
+        size: 'Size',
+        smaller: 'Smaller text',
+        larger: 'Larger text',
+        lineHeight: 'Line height',
+        lessLineHeight: 'Decrease line height',
+        moreLineHeight: 'Increase line height',
+        width: 'Width',
+        wider: 'Wider text',
+        narrower: 'Narrower text',
+        widthSetting: 'Width setting',
+        layout: 'Layout',
+        layoutLabel: 'Page or scroll',
+        page: 'Page',
+        scroll: 'Scroll',
+        justify: 'Justify',
+        filters: 'Book filters',
+        noScript: 'Enable JavaScript to read your books.',
+        drop: 'Drop to add books',
+        languageSwitch: 'Language: English. Switch to Dutch.',
+        publisherFont: 'Publisher',
+        theme_dag: 'Day',
+        theme_sepia: 'Sepia',
+        theme_grijs: 'Grey',
+        theme_schemer: 'Dusk',
+        theme_nacht: 'Night',
+        theme_zwart: 'Black',
+        mode_auto: 'Appearance: system',
+        mode_light: 'Appearance: light',
+        mode_dark: 'Appearance: dark',
+        openBook: 'Open {title}',
+        deleteBook: 'Delete {title}',
+        hideBook: 'Hide {title}',
+        changeCategory: 'Change category: {title}',
+        percentRead: '{percent}% read',
+        opened: 'Opened',
+        unread: 'Unread',
+        bookCountOne: '{count} book',
+        bookCountOther: '{count} books',
+        countOf: '{count} of {total}',
+        confirmHide: 'Hide "{title}"? The file will stay in its folder.',
+        confirmDelete: 'Delete "{title}"?',
+        importProgress: 'Importing… {current}/{total}',
+        addedOne: '{count} book added',
+        addedOther: '{count} books added',
+        scanFolder: 'Scanning… {name}',
+        scanProgress: 'Scanning… {current}/{total}',
+        scanResult: '{found} books found, {added} new',
+        scanDenied: '{found} books found, {added} new\nNo read access: {names}. Existing books kept.',
+        unsupportedFile: '{name}: This file type is not supported',
+        metadataSkipped: '{name}: metadata skipped',
+        importFailedFile: '{name}: import failed',
+        folderIncomplete: '{name}: could not read the entire folder; existing books kept',
+        metadataMissing: '{name}: metadata unavailable',
+        fileMissing: 'File not found: {name}',
+        openFailed: 'Could not open “{title}”. Check the file and your connection.',
+        pageNumber: 'Page {page}',
+        pageProgress: 'Page {page} / {total}',
+        chapterProgress: 'Chapter {chapter} · {percent}%',
+        sectionProgress: '{section} · {percent}%',
+        percent: '{percent}%',
+        pageFailed: 'Could not display page {page}.',
+        bookTitle: '{title} · {app}',
+        storageBlocked: 'Close other Leeslamp tabs to access storage.',
+        storageFailed: 'Storage failed',
+        prefsFailed: 'Could not save your preferences.',
+        categoryFailed: 'Could not save the category.',
+        deleteFailed: 'Could not remove the book.',
+        downloadFailed: 'Download failed',
+        coverFailed: 'Could not create the cover',
+        importBusy: 'Books are already being imported. Try again shortly.',
+        importRunning: 'An import is already running',
+        selectFolder: 'Choose a folder',
+        folderAccess: 'No read access to the folder',
+        linkFailed: 'Could not link the folder.',
+        scanFailed: 'Scan failed. Please try again.',
+        addFailed: 'Could not add books. Use Import or the folder button.',
+        progressFailed: 'Could not save your reading progress.',
+        locationFailed: 'Could not open this location.',
+        opening: 'Opening book…',
+        readAccess: 'No read access',
+        fileStorageMissing: 'File is missing from storage',
+        turnFailed: 'Could not turn the page.',
+        readPDF: 'Read PDF',
+        readText: 'Read text',
+        untitled: 'Untitled',
+        libraryFailed: 'Could not load the library. Check that browser storage is allowed.',
+    },
+};
+
 // Small DOM and storage helpers. Original files never enter progress transactions.
 const $ = selector => document.querySelector(selector);
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, Number(value) || 0));
@@ -30,7 +303,7 @@ const database = () => dbPromise ??= new Promise((resolve, reject) => {
         resolve(request.result);
     };
     request.onerror = () => { dbPromise = null; reject(request.error); };
-    request.onblocked = () => toast('Sluit andere Leeslamp-tabbladen om de opslag te openen.');
+    request.onblocked = () => toast(() => t('storageBlocked'));
 });
 const tx = async (store, mode, fn) => {
     const db = await database();
@@ -38,7 +311,7 @@ const tx = async (store, mode, fn) => {
         const transaction = db.transaction(store, mode);
         let request;
         transaction.oncomplete = () => resolve(request?.result);
-        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error('Opslag mislukt'));
+        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
         try { request = fn(transaction.objectStore(store), transaction); }
         catch (error) { transaction.abort(); reject(error); }
     });
@@ -52,7 +325,7 @@ const bookTransaction = async (record, file, remove = false) => {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(['files', 'books'], 'readwrite');
         transaction.oncomplete = resolve;
-        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error('Opslag mislukt'));
+        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
         if (remove) {
             transaction.objectStore('books').delete(record.id);
             transaction.objectStore('files').delete(record.id);
@@ -65,16 +338,70 @@ const bookTransaction = async (record, file, remove = false) => {
 const readSetting = (key, fallback) => {
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 };
+// UI language is independent of stored books and reader preferences.
+let lang = resolveLanguage();
+function resolveLanguage() {
+    if (location.pathname === '/en') return 'en';
+    const stored = location.pathname === '/' ? readSetting('leeslamp.lang', '') : '';
+    return ['nl', 'en'].includes(stored) ? stored : navigator.language.toLowerCase().startsWith('nl') ? 'nl' : 'en';
+}
+function t(key, params = {}) {
+    const template = STRINGS[lang][key] ?? STRINGS.nl[key];
+    if (template == null) throw new Error(`Unknown translation: ${key}`);
+    return template.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ''));
+}
+function localize(node, key, params = {}, attribute) {
+    node.dataset.i18n ??= '';
+    if (attribute) node.setAttribute(`data-i18n-${attribute}`, key);
+    else node.dataset.i18n = key;
+    if (Object.keys(params).length) node.dataset.i18nParams = JSON.stringify(params);
+    if (attribute) node.setAttribute(attribute, t(key, params));
+    else node.textContent = t(key, params);
+    return node;
+}
+function updateTitle() {
+    document.title = active ? t('bookTitle', { title: active.record.title, app: t('appTitle') }) : t('appTitle');
+}
+function updateProgressLabel(session) {
+    $('#progress-label').textContent = session.progressLabel?.() ?? t('percent', { percent: Math.round(session.record.fraction * 100) });
+}
+function applyLanguage() {
+    document.documentElement.lang = lang;
+    // One pass through marked UI nodes, only at startup or a language change.
+    for (const node of document.querySelectorAll('[data-i18n]')) {
+        const params = JSON.parse(node.dataset.i18nParams || '{}');
+        if (node.dataset.i18n) node.textContent = t(node.dataset.i18n, params);
+        for (const attribute of ['title', 'placeholder', 'aria-label', 'content', 'data-drop-label']) {
+            const key = node.getAttribute(`data-i18n-${attribute}`);
+            if (key) node.setAttribute(attribute, t(key, params));
+        }
+    }
+    for (const node of $('#lang').querySelectorAll('[data-language]')) {
+        node.classList.toggle('selected', node.dataset.language === lang);
+    }
+    $('#lang').setAttribute('aria-pressed', String(lang === 'en'));
+    updateTitle(); applyMode(); renderLibrary();
+    if (active) updateProgressLabel(active);
+    if (!$('#toast').hidden && toastMessage) $('#toast').textContent = toastMessage();
+}
+$('#lang').addEventListener('click', () => {
+    lang = lang === 'nl' ? 'en' : 'nl';
+    writeSetting('leeslamp.lang', lang);
+    history.replaceState(history.state, '', `${lang === 'en' ? '/en' : '/'}${location.search}${location.hash}`);
+    applyLanguage();
+});
+
 const writeSetting = (key, value) => {
     try { localStorage.setItem(key, value); }
-    catch { toast('Je voorkeuren konden niet worden opgeslagen.'); }
+    catch { toast(() => t('prefsFailed')); }
 };
-let toastTimer;
+let toastTimer, toastMessage;
 function toast(message, duration = 4000) {
     clearTimeout(toastTimer);
-    $('#toast').textContent = message;
+    toastMessage = typeof message === 'function' ? message : () => message;
+    $('#toast').textContent = toastMessage();
     $('#toast').hidden = false;
-    if (duration) toastTimer = setTimeout(() => { $('#toast').hidden = true; }, duration);
+    if (duration) toastTimer = setTimeout(() => { $('#toast').hidden = true; toastMessage = null; }, duration);
 }
 const report = (message, error) => { console.error(error); toast(message); };
 
@@ -121,9 +448,8 @@ if (!['auto', 'light', 'dark'].includes(mode)) mode = 'auto';
 const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 function applyMode() {
     document.documentElement.dataset.mode = mode;
-    const name = { auto: 'systeem', light: 'licht', dark: 'donker' }[mode];
-    $('#mode').title = `Weergave: ${name}`;
-    $('#mode').setAttribute('aria-label', `Weergave: ${name}`);
+    $('#mode').title = t(`mode_${mode}`);
+    $('#mode').setAttribute('aria-label', $('#mode').title);
     $('#mode').replaceChildren(icon(mode));
     $('meta[name="theme-color"]').content = active ? THEMES[prefs.theme].bg
         : mode === 'dark' || (mode === 'auto' && systemTheme.matches) ? '#171c19' : '#f3f3ef';
@@ -145,8 +471,8 @@ const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true })
 const visibleBooks = () => books.filter(book => !book.hidden);
 const categories = () => [...new Set(visibleBooks().map(book => book.category))].sort(collator.compare);
 const categoryFilter = () => filter.startsWith('category:');
-const filterName = () => categoryFilter() ? filter.slice(9) || 'Geen categorie'
-    : filter === 'all' ? 'Alle boeken' : filter === 'recent' ? 'Laatst gelezen' : filter.toUpperCase();
+const filterName = () => categoryFilter() ? filter.slice(9) || t('noCategory')
+    : filter === 'all' ? t('allBooks') : filter === 'recent' ? t('recent') : filter.toUpperCase();
 function renderFilters() {
     const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
     const visible = visibleBooks();
@@ -159,12 +485,12 @@ function renderFilters() {
         button.append(el('span', 'count', count));
         fragment.append(button);
     };
-    add('all', 'Alle boeken', visible.length);
-    add('recent', 'Laatst gelezen', visible.filter(b => b.opened).length);
-    if (visible.length) fragment.append(el('div', 'section-label', 'Categorieën'));
-    for (const category of categories()) add(`category:${category}`, category || 'Geen categorie', visible.filter(b => b.category === category).length);
+    add('all', t('allBooks'), visible.length);
+    add('recent', t('recent'), visible.filter(b => b.opened).length);
+    if (visible.length) fragment.append(el('div', 'section-label', t('categories')));
+    for (const category of categories()) add(`category:${category}`, category || t('noCategory'), visible.filter(b => b.category === category).length);
     const extensions = [...new Set(visible.map(b => b.ext))].sort();
-    if (extensions.length) fragment.append(el('div', 'section-label', 'Formaat'));
+    if (extensions.length) fragment.append(el('div', 'section-label', t('format')));
     for (const ext of extensions) add(ext, ext.toUpperCase(), visible.filter(b => b.ext === ext).length);
     $('#filters').replaceChildren(fragment);
     if (focusedFilter) [...$('#filters').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
@@ -198,7 +524,7 @@ function renderLibrary() {
             presentedBooks.add(book.id);
         }
         const open = el('button', 'book-open');
-        open.setAttribute('aria-label', `${book.title} openen`);
+        open.setAttribute('aria-label', t('openBook', { title: book.title }));
         open.title = `${book.title}${book.author ? ` · ${book.author}` : ''}`;
         const cover = el('span', 'cover');
         if (book.cover) {
@@ -230,16 +556,16 @@ function renderLibrary() {
         }
         open.append(el('span', 'book-title', book.title), el('span', 'book-author', book.author));
         const meta = el('span', 'book-meta');
-        meta.append(el('span', '', book.ext.toUpperCase()), el('span', '', book.fraction > 0 ? `${Math.round(clamp(book.fraction) * 100)}% gelezen` : book.opened ? 'Geopend' : 'Ongelezen'));
+        meta.append(el('span', '', book.ext.toUpperCase()), el('span', '', book.fraction > 0 ? t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) }) : book.opened ? t('opened') : t('unread')));
         open.append(meta);
         const remove = el('button', 'delete');
         remove.append(icon('delete'));
         remove.dataset.delete = 'true';
-        remove.title = `${book.title} verwijderen`;
+        remove.title = t(book.source.kind === 'fs' ? 'hideBook' : 'deleteBook', { title: book.title });
         remove.setAttribute('aria-label', remove.title);
         const change = el('button', 'delete category-change', '⋯');
         change.dataset.category = 'true';
-        change.title = `Categorie wijzigen: ${book.title}`;
+        change.title = t('changeCategory', { title: book.title });
         change.setAttribute('aria-label', change.title);
         change.disabled = remove.disabled = importing;
         card.append(open, change, remove);
@@ -248,7 +574,7 @@ function renderLibrary() {
     $('#grid').replaceChildren(fragment);
     // Detach every old image before revoking URLs it could still request lazily.
     for (const url of retiredURLs) URL.revokeObjectURL(url);
-    $('#library-count').textContent = `${visible.length} ${visible.length === 1 ? 'boek' : 'boeken'}${visible.length !== allBooks.length ? ` van ${allBooks.length}` : ''}`;
+    $('#library-count').textContent = visible.length === allBooks.length ? t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }) : t('countOf', { count: t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }), total: allBooks.length });
     $('#empty').hidden = allBooks.length !== 0;
     $('#no-results').hidden = !allBooks.length || visible.length !== 0;
 }
@@ -281,14 +607,14 @@ $('#grid').addEventListener('click', async e => {
         try {
             await put('books', { ...record, category });
             record.category = category; renderLibrary();
-        } catch (error) { report('Categorie opslaan is mislukt.', error); }
+        } catch (error) { report(() => t('categoryFailed'), error); }
         return;
     }
     if (e.target.closest('[data-delete]')) {
         if (importing) return;
         const label = record.source.kind === 'fs'
-            ? `"${record.title}" verbergen? Het bestand blijft in de map staan.`
-            : `"${record.title}" verwijderen?`;
+            ? t('confirmHide', { title: record.title })
+            : t('confirmDelete', { title: record.title });
         if (!confirm(label)) return;
         try {
             if (record.source.kind === 'fs') {
@@ -300,7 +626,7 @@ $('#grid').addEventListener('click', async e => {
             }
             presentedBooks.delete(record.id);
             renderLibrary();
-        } catch (error) { report('Verwijderen is mislukt.', error); }
+        } catch (error) { report(() => t('deleteFailed'), error); }
     } else if (e.target.closest('.book-open')) await openBook(record);
 });
 
@@ -311,7 +637,7 @@ function loadScript(src) {
         const script = document.createElement('script');
         script.src = src;
         script.onload = resolve;
-        script.onerror = () => { script.remove(); scripts.delete(src); reject(new Error('Download mislukt')); };
+        script.onerror = () => { script.remove(); scripts.delete(src); reject(new Error(t('downloadFailed'))); };
         document.head.append(script);
     }));
     return scripts.get(src);
@@ -334,7 +660,7 @@ const formatContributor = value => Array.isArray(value)
     : oneContributor(value);
 const engineFile = (file, name) => new File([file], name.toLowerCase(), { type: file.type });
 const canvasBlob = canvas => new Promise((resolve, reject) => canvas.toBlob(
-    blob => blob ? resolve(blob) : reject(new Error('Omslag kon niet worden gemaakt')), 'image/jpeg', .8));
+    blob => blob ? resolve(blob) : reject(new Error(t('coverFailed'))), 'image/jpeg', .8));
 async function downscaleCover(blob) {
     if (!blob) return null;
     let image, url;
@@ -365,7 +691,7 @@ async function importMetadata(file, kind) {
         try {
             let cover = null;
             try { cover = await downscaleCover(await book.getCover?.()); }
-            catch (error) { console.warn('Omslag overgeslagen', error); }
+            catch (error) { console.warn('Cover skipped', error); }
             return { title: languageMap(book.metadata?.title), author: formatContributor(book.metadata?.author), cover };
         } finally { book.destroy?.(); }
     }
@@ -385,7 +711,7 @@ async function importMetadata(file, kind) {
                 await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
                 cover = await downscaleCover(await canvasBlob(canvas));
                 canvas.width = canvas.height = 0;
-            } catch (error) { console.warn('PDF-omslag overgeslagen', error); }
+            } catch (error) { console.warn('PDF cover skipped', error); }
             return { title: typeof info.Title === 'string' ? info.Title : '', author: typeof info.Author === 'string' ? info.Author : '', cover };
         } finally { await task.destroy(); }
     }
@@ -396,11 +722,13 @@ function chooseCategory(current = '', change = false) {
     if (dialog.open) return Promise.resolve(null);
     const values = ['', ...categories().filter(Boolean)];
     select.replaceChildren(...values.map((value, index) => {
-        const option = el('option', '', value || 'Geen categorie'); option.value = String(index); return option;
-    }), Object.assign(el('option', '', '+ Nieuwe categorie…'), { value: 'new' }));
+        const option = el('option', '', value);
+        if (!value) localize(option, 'noCategory');
+        option.value = String(index); return option;
+    }), Object.assign(localize(el('option'), 'addCategory'), { value: 'new' }));
     select.value = String(Math.max(0, values.indexOf(current)));
     input.value = ''; input.required = false; $('#new-category-field').hidden = true;
-    $('#category-submit').textContent = change ? 'Opslaan' : 'Importeren';
+    localize($('#category-submit'), change ? 'save' : 'import');
     dialog.returnValue = '';
     return new Promise(resolve => {
         dialog.addEventListener('close', () => resolve(dialog.returnValue === 'save'
@@ -435,7 +763,7 @@ function newRecord(file, category, source, id = crypto.randomUUID()) {
         size: file.size, lastModified: file.lastModified, added: Date.now(), opened: null, fraction: 0, loc: null };
 }
 async function importFiles(files, categoryForFile) {
-    if (importing) { toast('Er worden al boeken geïmporteerd. Probeer het zo opnieuw.'); return; }
+    if (importing) { toast(() => t('importBusy')); return; }
     if (!files.length) return;
     setImporting(true);
     if (!categoryForFile) {
@@ -447,25 +775,25 @@ async function importFiles(files, categoryForFile) {
     const failures = [];
     let lastRender = performance.now();
     for (const [index, file] of [...files].entries()) {
-        toast(`Importeren… ${index + 1}/${files.length}`, 0);
+        toast(() => t('importProgress', { current: index + 1, total: files.length }), 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
-        if (!kind) { failures.push(`${file.name}: Dit bestandstype wordt niet ondersteund`); continue; }
+        if (!kind) { failures.push(() => t('unsupportedFile', { name: file.name })); continue; }
         try {
             const record = newRecord(file, categoryForFile(file), { kind: 'blob' });
             try {
                 const meta = await importMetadata(file, kind);
                 Object.assign(record, meta, { title: meta.title.trim() || record.title, metadataReady: true });
-            } catch (error) { console.warn(file.name, error); failures.push(`${file.name}: metadata overgeslagen`); }
+            } catch (error) { console.warn(file.name, error); failures.push(() => t('metadataSkipped', { name: file.name })); }
             await bookTransaction(record, file);
             books.push(record);
             count++;
-        } catch (error) { console.error(error); failures.push(`${file.name}: importeren mislukt`); }
+        } catch (error) { console.error(error); failures.push(() => t('importFailedFile', { name: file.name })); }
         if (performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
         await yieldUI();
     }
     setImporting(false);
     renderLibrary();
-    toast([`${count} ${count === 1 ? 'boek toegevoegd' : 'boeken toegevoegd'}`, ...failures].join('\n'), failures.length ? 12000 : 4000);
+    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
 
 // File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
@@ -499,11 +827,11 @@ async function scanRoots(selected) {
         if (force || performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
     };
     for (const root of selected) {
-        toast(`Scannen… ${root.name}`, 0);
+        toast(() => t('scanFolder', { name: root.name }), 0);
         const entries = [];
         try { await enumerate(root.handle, entries); }
         catch (error) {
-            console.warn(root.name, error); failures.push(`${root.name}: map niet volledig leesbaar, bestaande boeken behouden`); continue;
+            console.warn(root.name, error); failures.push(() => t('folderIncomplete', { name: root.name })); continue;
         }
         found += entries.length;
         const existing = new Map(books.filter(b => b.source.kind === 'fs' && b.source.root === root.id).map(b => [b.id, b]));
@@ -539,7 +867,7 @@ async function scanRoots(selected) {
     refresh(true);
     let batch = [], completed = 0;
     for (const { handle, record } of work) {
-        toast(`Scannen… ${completed}/${found}`, 0);
+        toast(() => t('scanProgress', { current: completed, total: found }), 0);
         try {
             const file = await handle.getFile();
             if (!record.metadataReady || record.size !== file.size || record.lastModified !== file.lastModified) {
@@ -551,7 +879,7 @@ async function scanRoots(selected) {
                 batch.push(record);
             }
         } catch (error) {
-            console.warn(record.name, error); failures.push(`${record.name}: metadata niet beschikbaar`);
+            console.warn(record.name, error); failures.push(() => t('metadataMissing', { name: record.name }));
             batch.push(record);
         }
         completed++;
@@ -559,19 +887,19 @@ async function scanRoots(selected) {
             if (batch.length) await writeBookBatch(batch);
             batch = [];
         }
-        toast(`Scannen… ${completed}/${found}`, 0);
+        toast(() => t('scanProgress', { current: completed, total: found }), 0);
         refresh(); await yieldUI();
     }
     refresh(true);
-    toast([`${found} boeken gevonden, ${added} nieuw`, ...failures].join('\n'), failures.length ? 12000 : 4000);
-    return { found, added, failures };
+    toast(() => [t('scanResult', { found, added }), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    return { found, added, failures: failures.map(message => message()) };
 }
 async function linkFolder(handle) {
-    if (importing || $('#category-dialog').open) throw new Error('Er loopt al een import');
-    if (handle?.kind !== 'directory') throw new Error('Kies een map');
+    if (importing || $('#category-dialog').open) throw new Error(t('importRunning'));
+    if (handle?.kind !== 'directory') throw new Error(t('selectFolder'));
     setImporting(true);
     try {
-        if (!await readPermission(handle)) throw new Error('Geen leestoegang tot de map');
+        if (!await readPermission(handle)) throw new Error(t('folderAccess'));
         let root;
         for (const candidate of roots) {
             if (await handle.isSameEntry(candidate.handle)) { root = candidate; break; }
@@ -584,7 +912,7 @@ async function linkFolder(handle) {
     } finally { setImporting(false); }
 }
 async function rescan() {
-    if (importing || $('#category-dialog').open) throw new Error('Er loopt al een import');
+    if (importing || $('#category-dialog').open) throw new Error(t('importRunning'));
     setImporting(true);
     try {
         // Start all permission checks within the button's user gesture, before enumeration.
@@ -594,7 +922,7 @@ async function rescan() {
         }));
         const denied = permissions.filter(item => !item.allowed);
         const result = await scanRoots(permissions.filter(item => item.allowed).map(item => item.root));
-        if (denied.length) toast(`${result.found} boeken gevonden, ${result.added} nieuw\nGeen leestoegang: ${denied.map(item => item.root.name).join(', ')}. Bestaande boeken behouden.`, 12000);
+        if (denied.length) toast(() => t('scanDenied', { found: result.found, added: result.added, names: denied.map(item => item.root.name).join(', ') }), 12000);
         return result;
     } finally { setImporting(false); }
 }
@@ -602,9 +930,9 @@ $('#link-folder').hidden = typeof window.showDirectoryPicker !== 'function';
 $('#folder-import').hidden = !$('#link-folder').hidden;
 $('#link-folder').addEventListener('click', async () => {
     try { await linkFolder(await window.showDirectoryPicker({ mode: 'read' })); }
-    catch (error) { if (error.name !== 'AbortError') report('Map koppelen is mislukt.', error); }
+    catch (error) { if (error.name !== 'AbortError') report(() => t('linkFailed'), error); }
 });
-$('#rescan').addEventListener('click', () => rescan().catch(error => report('Scannen is mislukt. Probeer opnieuw.', error)));
+$('#rescan').addEventListener('click', () => rescan().catch(error => report(() => t('scanFailed'), error)));
 $('#folder-import').addEventListener('click', () => $('#folder-input').click());
 $('#folder-input').addEventListener('change', e => {
     const files = [...e.target.files].filter(file => kindFor(file.name.split('.').pop().toLowerCase())); e.target.value = '';
@@ -638,7 +966,7 @@ $('#library').addEventListener('drop', async e => {
             const loose = await Promise.all(handles.filter(handle => handle?.kind === 'file').map(handle => handle.getFile()));
             if (loose.length) await importFiles(loose);
         } else await importFiles(files);
-    } catch (error) { report('Toevoegen is mislukt. Gebruik Importeren of de mapknop.', error); }
+    } catch (error) { report(() => t('addFailed'), error); }
 });
 
 // One reader session owns every timer, observer, frame, listener and render task.
@@ -670,7 +998,7 @@ function saveProgress(session, final = false) {
         return request;
     })).catch(error => {
         session.dirty = true;
-        report('Je leesvoortgang kon niet worden opgeslagen.', error);
+        report(() => t('progressFailed'), error);
     });
     return session.writes;
 }
@@ -682,7 +1010,8 @@ function progress(session, fraction, loc, label) {
     session.dirty = true;
     $('#slider').value = session.record.fraction;
     $('#slider-fill').style.setProperty('--fraction', session.record.fraction);
-    $('#progress-label').textContent = label || `${Math.round(session.record.fraction * 100)}%`;
+    session.progressLabel = label;
+    updateProgressLabel(session);
     saveProgress(session);
 }
 function hideBars(hidden) {
@@ -731,8 +1060,18 @@ function keydown(event) {
 function setTOC(session, items, select) {
     if (!live(session) || !items?.length) return;
     session.toc = createTOCView(items, href => {
-        Promise.resolve(select(href)).catch(error => report('Deze locatie kon niet worden geopend.', error));
+        Promise.resolve(select(href)).catch(error => report(() => t('locationFailed'), error));
         closePanels(); showBars();
+    });
+    // Mark only app-generated fallback labels; book headings remain original content.
+    const labels = [];
+    const collect = entries => { for (const item of entries) { labels.push(item); if (item.subitems) collect(item.subitems); } };
+    collect(items);
+    session.toc.element.querySelectorAll('[role="treeitem"]').forEach((node, index) => {
+        if (!labels[index].i18n) return;
+        const label = localize(el('span'), labels[index].i18n);
+        for (const child of [...node.childNodes]) if (child.nodeType === Node.TEXT_NODE) child.remove();
+        node.append(label);
     });
     $('#toc-list').replaceChildren(session.toc.element);
     $('#toc-button').hidden = false;
@@ -747,13 +1086,13 @@ async function openBook(record) {
     active = session;
     $('#library').hidden = true; $('#reader').hidden = false;
     $('#r-title').textContent = record.title;
-    document.title = `${record.title} · Leeslamp`;
+    updateTitle();
     $('#toc-button').hidden = true;
     $('#ticks').replaceChildren(); $('#toc-list').replaceChildren();
     $('#slider').value = record.fraction;
     $('#slider-fill').style.setProperty('--fraction', clamp(record.fraction));
-    $('#progress-label').textContent = `${Math.round(record.fraction * 100)}%`;
-    $('#r-body').replaceChildren(Object.assign(el('div', '', 'Boek openen…'), { id: 'loading' }));
+    $('#progress-label').textContent = t('percent', { percent: Math.round(record.fraction * 100) });
+    $('#r-body').replaceChildren(Object.assign(localize(el('div'), 'opening'), { id: 'loading' }));
     $('#slider').disabled = $('#prev').disabled = $('#next').disabled = true;
     applyPreferences(); showBars();
     $('#reader').focus({ preventScroll: true });
@@ -772,11 +1111,11 @@ async function openBook(record) {
         let file;
         if (record.source.kind === 'fs') {
             const root = roots.find(root => root.id === record.source.root);
-            if (!root || !await readPermission(root.handle)) throw new Error('Geen leestoegang');
+            if (!root || !await readPermission(root.handle)) throw new Error(t('readAccess'));
             file = await resolveFile(root, record.source.path);
         } else file = (await get('files', record.id))?.file;
         if (!live(session)) return;
-        if (!file) throw new Error('Bestand ontbreekt in de opslag');
+        if (!file) throw new Error(t('fileStorageMissing'));
         resolvingFile = false;
         if (record.kind === 'foliate') await openFoliate(session, file);
         else if (record.kind === 'pdf') await openPDF(session, file);
@@ -792,16 +1131,16 @@ async function openBook(record) {
     } catch (error) {
         if (live(session)) {
             await closeBook();
-            report(resolvingFile ? `Bestand niet gevonden: ${record.name}`
-                : `“${record.title}” kon niet worden geopend. Controleer het bestand en je verbinding.`, error);
+            report(() => resolvingFile ? t('fileMissing', { name: record.name })
+                : t('openFailed', { title: record.title }), error);
         }
     }
 }
 function disposeView(view) {
     if (view.disposed) return;
     view.disposed = true;
-    try { view.close(); } catch (error) { console.warn('Lezer afsluiten', error); }
-    try { view.book?.destroy?.(); } catch (error) { console.warn('Boek vrijgeven', error); }
+    try { view.close(); } catch (error) { console.warn('Closing reader', error); }
+    try { view.book?.destroy?.(); } catch (error) { console.warn('Releasing book', error); }
     view.remove();
 }
 async function closeBook() {
@@ -819,7 +1158,7 @@ async function closeBook() {
     closePanels(); $('#toc-list').replaceChildren(); $('#r-body').replaceChildren();
     $('#reader').hidden = true; $('#library').hidden = false;
     hideBars(false);
-    document.title = 'Leeslamp'; applyMode();
+    updateTitle(); applyMode();
     closing = saveProgress(session, true);
     await closing;
     closing = null;
@@ -858,7 +1197,7 @@ async function openFoliate(session, file) {
         const index = view.renderer.index ?? 0;
         const value = Number.isFinite(fraction) ? fraction : index / Math.max(1, view.book.sections.length - 1);
         progress(session, value, cfi ?? tocItem?.href ?? session.record.loc,
-            `${tocItem?.label ? `${tocItem.label} · ` : ''}${Math.round(clamp(value) * 100)}%`);
+            () => t(tocItem?.label ? 'sectionProgress' : 'chapterProgress', { section: tocItem?.label, chapter: index + 1, percent: Math.round(clamp(value) * 100) }));
         if (tocItem?.href && live(session)) session.toc?.setCurrentHref(tocItem.href);
     });
     try {
@@ -885,7 +1224,7 @@ function turn(direction) {
     const session = active;
     if (!session?.ready) return;
     if (session.view) Promise.resolve(direction < 0 ? session.view.goLeft() : session.view.goRight())
-        .catch(error => report('Bladeren is mislukt.', error));
+        .catch(error => report(() => t('turnFailed'), error));
     else {
         const step = session.pages ? session.pages[session.pageIndex ?? 0].box.offsetHeight + 16 : session.pane.clientHeight * .85;
         session.pane.scrollBy({ top: direction * step, behavior: 'instant' });
@@ -902,7 +1241,7 @@ $('#slider').addEventListener('input', e => {
         const view = session.view;
         const action = view.isFixedLayout && !view.getSectionFractions().length
             ? view.goTo(Math.round(fraction * (view.book.sections.length - 1))) : view.goToFraction(fraction);
-        Promise.resolve(action).catch(error => report('Deze locatie kon niet worden geopend.', error));
+        Promise.resolve(action).catch(error => report(() => t('locationFailed'), error));
     } else session.pane.scrollTop = fraction * Math.max(0, session.pane.scrollHeight - session.pane.clientHeight);
 });
 
@@ -921,7 +1260,7 @@ function setupScroll(session) {
             let low = 0, high = tops.length - 1;
             while (low < high) { const mid = Math.ceil((low + high) / 2); if (tops[mid] <= middle) low = mid; else high = mid - 1; }
             session.pageIndex = low;
-            label = `Pagina ${low + 1} / ${session.pages.length}`;
+            label = () => t('pageProgress', { page: low + 1, total: session.pages.length });
         }
         progress(session, fraction, fraction, label);
     };
@@ -951,14 +1290,14 @@ async function openPDF(session, file) {
     if (!live(session)) return;
     const first = await doc.getPage(1), viewport = first.getViewport({ scale: 1 });
     if (!live(session)) return;
-    const pane = el('div'); pane.id = 'pdf'; pane.tabIndex = 0; pane.setAttribute('aria-label', 'PDF lezen');
+    const pane = el('div'); pane.id = 'pdf'; pane.tabIndex = 0; localize(pane, 'readPDF', {}, 'aria-label');
     session.pane = pane;
     const fragment = document.createDocumentFragment();
     session.pages = Array.from({ length: doc.numPages }, (_, index) => {
         const box = el('div', 'page');
         box.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
         box.dataset.page = index;
-        box.setAttribute('aria-label', `Pagina ${index + 1}`);
+        localize(box, 'pageNumber', { page: index + 1 }, 'aria-label');
         fragment.append(box);
         return { box, index, visible: false, generation: 0, task: null, canvas: null, rendering: false };
     });
@@ -993,7 +1332,7 @@ async function openPDF(session, file) {
             const scaled = pdfPage.getViewport({ scale: width / base.width * (devicePixelRatio || 1) });
             const canvas = el('canvas');
             canvas.width = Math.ceil(scaled.width); canvas.height = Math.ceil(scaled.height);
-            canvas.setAttribute('aria-label', `Pagina ${page.index + 1}`);
+            localize(canvas, 'pageNumber', { page: page.index + 1 }, 'aria-label');
             const task = pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: scaled });
             page.task = task; page.canvas = canvas; page.box.append(canvas);
             await task.promise;
@@ -1002,7 +1341,7 @@ async function openPDF(session, file) {
             pdfPage.cleanup();
         } catch (error) {
             if (valid() && error.name !== 'RenderingCancelledException') {
-                discard(page); report(`Pagina ${page.index + 1} kon niet worden getoond.`, error);
+                discard(page); report(() => t('pageFailed', { page: page.index + 1 }), error);
             }
         } finally { if (generation === page.generation) page.rendering = false; }
     }
@@ -1034,7 +1373,7 @@ async function openPDF(session, file) {
     const convert = items => items.map(item => {
         const href = `pdf:${nextId++}`;
         if (item.dest) destinations.set(href, item.dest);
-        return { label: item.title || 'Zonder titel', href: item.dest ? href : undefined, subitems: convert(item.items || []) };
+        return { label: item.title || t('untitled'), i18n: item.title ? null : 'untitled', href: item.dest ? href : undefined, subitems: convert(item.items || []) };
     });
     if (outline?.length) setTOC(session, convert(outline), async href => {
         let dest = destinations.get(href);
@@ -1059,7 +1398,7 @@ function sanitizeHTML(source) {
     for (const node of parsed.body.querySelectorAll('*')) {
         for (const attribute of [...node.attributes]) {
             const name = attribute.name.toLowerCase();
-            if (name.startsWith('on') || ['style', 'srcdoc', 'srcset', 'name', 'class', 'is', 'contenteditable', 'autofocus'].includes(name)) node.removeAttribute(attribute.name);
+            if (name.startsWith('data-i18n') || name.startsWith('on') || ['style', 'srcdoc', 'srcset', 'name', 'class', 'is', 'contenteditable', 'autofocus'].includes(name)) node.removeAttribute(attribute.name);
             else if (['href', 'src', 'xlink:href', 'action', 'formaction', 'poster', 'background'].includes(name)) {
                 const value = attribute.value.replace(/[\u0000-\u0020]/g, '');
                 const allowed = name === 'href' ? /^(https?:|mailto:|#)/i.test(value)
@@ -1080,7 +1419,7 @@ function sanitizeHTML(source) {
     return parsed.body.innerHTML;
 }
 async function openText(session, file) {
-    const pane = el('div'); pane.id = 'text'; pane.tabIndex = 0; pane.setAttribute('aria-label', 'Tekst lezen');
+    const pane = el('div'); pane.id = 'text'; pane.tabIndex = 0; localize(pane, 'readText', {}, 'aria-label');
     const article = el('article');
     const ext = session.record.ext;
     if (ext === 'txt') {
@@ -1108,7 +1447,7 @@ async function openText(session, file) {
     const headings = [...article.querySelectorAll('h1,h2,h3')];
     const items = headings.map((heading, index) => {
         heading.id ||= `reading-heading-${index}`;
-        return { label: heading.textContent || 'Zonder titel', href: `#${heading.id}` };
+        return { label: heading.textContent || t('untitled'), i18n: heading.textContent ? null : 'untitled', href: `#${heading.id}` };
     });
     setTOC(session, items, href => {
         article.querySelector(href)?.scrollIntoView({ block: 'start', behavior: 'instant' });
@@ -1139,14 +1478,15 @@ function styleFixedDocument(doc) {
 }
 for (const [name, theme] of Object.entries(THEMES)) {
     const button = el('button'); button.dataset.theme = name;
-    button.title = name[0].toUpperCase() + name.slice(1);
-    button.setAttribute('aria-label', button.title);
+    localize(button, `theme_${name}`, {}, 'title');
+    localize(button, `theme_${name}`, {}, 'aria-label');
     button.style.setProperty('--sample-bg', theme.bg); button.style.setProperty('--sample-fg', theme.fg);
-    button.append(el('span', 'theme-sample', 'A'), el('span', 'theme-name', button.title));
+    button.append(el('span', 'theme-sample', 'A'), localize(el('span', 'theme-name'), `theme_${name}`));
     $('#themes').append(button);
 }
 for (const font of fonts) {
     const button = el('button', '', font); button.dataset.font = font;
+    if (font === 'Boek') localize(button, 'publisherFont');
     button.style.fontFamily = font === 'Boek' ? 'Georgia, serif' : `"${font}", serif`;
     $('#fonts').append(button);
 }
@@ -1212,12 +1552,12 @@ $('#justify').addEventListener('change', e => {
     prefs.justify = e.target.checked; writeSetting('leeslamp.prefs', JSON.stringify(prefs)); applyPreferences('justify');
 });
 
-applyMode(); syncPreferences();
+applyLanguage(); syncPreferences();
 try {
     books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
     roots = await all('roots');
     setImporting(false); renderLibrary();
 }
-catch (error) { report('De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.', error); }
+catch (error) { report(() => t('libraryFailed'), error); }
 window.__leeslamp = { linkFolder, rescan };
-navigator.serviceWorker?.register('./sw.js').catch(error => console.warn('Offline opslag niet beschikbaar', error));
+navigator.serviceWorker?.register('./sw.js').catch(error => console.warn('Offline storage unavailable', error));

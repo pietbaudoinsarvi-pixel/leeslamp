@@ -42,3 +42,7 @@ Na afsluiten tijdens een scan kun je Opnieuw scannen gebruiken om ontbrekende me
 Zonder File System Access API verschijnt Map importeren: dezelfde mapindeling, maar bestanden worden dan gekopieerd naar IndexedDB en niet gekoppeld.
 Bij deze terugval bevat webkitRelativePath ook de gekozen hoofdmap; die naam wordt overgeslagen bij het bepalen van categorieën.
 Voor browserautomatisering zijn `window.__leeslamp.linkFolder(handle)` en `window.__leeslamp.rescan()` beschikbaar, ook met een OPFS-directoryhandle.
+
+## Taal / Language
+Gebruik NL / EN onderaan de zijbalk om direct van taal te wisselen; je boek en leespositie blijven behouden. `/en` opent altijd Engels. Op `/` geldt je opgeslagen voorkeur (`leeslamp.lang`), anders Nederlands bij een Nederlandse browsertaal en Engels bij elke andere browsertaal. De switch past ook de URL aan en bewaart queryparameters. Vercel ondersteunt `/en` via `vercel.json`; een lokale server moet dezelfde route naar `index.html` sturen.
+Use NL / EN in the sidebar to switch instantly. Share `/en` for English; `/` uses your saved preference or browser language. Your books, categories and reading position stay as they are.

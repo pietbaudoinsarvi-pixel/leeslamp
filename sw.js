@@ -1,4 +1,4 @@
-const VERSION = 'leeslamp-v1';
+const VERSION = 'leeslamp-v2';
 const VENDOR = [
     'view.js', 'epub.js', 'mobi.js', 'fb2.js', 'comic-book.js', 'fixed-layout.js',
     'paginator.js', 'progress.js', 'epubcfi.js', 'overlayer.js', 'search.js',
@@ -29,15 +29,16 @@ self.addEventListener('fetch', event => {
     const allowed = sameOrigin || ['cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'].includes(url.hostname);
     if (!allowed) return;
     const root = new URL('./', self.location.href).pathname;
-    const networkFirst = sameOrigin && ['', 'index.html', 'app.js', 'sw.js'].some(path => url.pathname === root + path);
+    const appNavigation = sameOrigin && request.mode === 'navigate' && [root, root + 'en', root + 'index.html'].includes(url.pathname);
+    const networkFirst = appNavigation || sameOrigin && ['', 'index.html', 'app.js', 'sw.js'].some(path => url.pathname === root + path);
     event.respondWith((async () => {
         const cache = await caches.open(VERSION);
-        const cached = () => cache.match(request, { ignoreSearch: networkFirst });
+        const cached = () => appNavigation ? cache.match('./index.html') : cache.match(request, { ignoreSearch: networkFirst });
         const network = async () => {
             const response = await fetch(request);
             if (response.ok || response.type === 'opaque') {
                 // Complete cache writes within the fetch event lifetime.
-                try { await cache.put(request, response.clone()); } catch { /* Quota must not break reading. */ }
+                try { await cache.put(appNavigation ? './index.html' : request, response.clone()); } catch { /* Quota must not break reading. */ }
             }
             return response;
         };

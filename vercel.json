@@ -1,0 +1,1 @@
+{ "trailingSlash": false, "rewrites": [ { "source": "/en", "destination": "/index.html" } ] }

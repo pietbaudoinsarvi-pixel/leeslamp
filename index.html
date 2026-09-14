@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f3f3ef">
-  <meta name="description" content="Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.">
-  <title>Leeslamp</title>
+  <meta name="description" content="Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp." data-i18n="" data-i18n-content="description">
+  <title data-i18n="appTitle">Leeslamp</title>
   <script>
     try { const mode = localStorage.getItem('leeslamp.mode'); if (['auto','light','dark'].includes(mode)) document.documentElement.dataset.mode = mode; } catch { /* System theme remains available without storage. */ }
   </script>
@@ -58,7 +58,7 @@
     .eyebrow,.section-label { font-size:10px; line-height:1.4; letter-spacing:.16em; text-transform:uppercase; color:var(--mute); font-weight:600; }
     #library { display:flex; height:100%; animation:view-in 500ms var(--ease); }
     #library.dragging { outline:2px dashed var(--accent); outline-offset:-8px; }
-    #library.dragging::after { content:'Laat los om toe te voegen'; position:fixed; inset:16px; z-index:10; display:grid; place-content:center; border:1px solid var(--accent); background:var(--bg); color:var(--fg); font-size:24px; letter-spacing:-.04em; pointer-events:none; }
+    #library.dragging::after { content:attr(data-drop-label); position:fixed; inset:16px; z-index:10; display:grid; place-content:center; border:1px solid var(--accent); background:var(--bg); color:var(--fg); font-size:24px; letter-spacing:-.04em; pointer-events:none; }
     #sidebar { width:216px; flex-shrink:0; background:var(--side); padding:32px 16px 16px; display:flex; flex-direction:column; border-right:1px solid var(--line); }
     .brand { display:flex; align-items:center; gap:12px; padding:0 12px 40px; font-size:17px; letter-spacing:-.045em; font-weight:600; }
     .brand svg { width:28px; height:32px; color:var(--accent); }
@@ -75,7 +75,12 @@
     .sidebar-bottom .import { justify-content:space-between; width:100%; }
     .device-note { display:flex; align-items:center; gap:6px; padding:0 8px; color:var(--mute); font-size:11px; }
     .device-note > .icon { width:14px; height:14px; }
-    #mode { margin-left:auto; padding:6px; min-height:32px; }
+    .device-note { flex-wrap:wrap; }
+    .device-note > span { flex:1; min-width:calc(100% - 20px); }
+    #lang { margin-left:auto; display:flex; gap:5px; padding:4px; min-height:32px; border-radius:0; font-size:10px; }
+    #lang .selected { color:var(--fg); box-shadow:0 1px currentColor; font-weight:700; }
+    #empty p,#no-results p { white-space:pre-line; }
+    #mode { margin-left:0; padding:6px; min-height:32px; }
     #mode .icon { width:18px; height:18px; }
     main { flex:1; min-width:0; overflow:auto; scrollbar-gutter:stable; }
     .library-content { max-width:2200px; margin:auto; padding:40px clamp(24px,3.4vw,80px) 56px; }
@@ -271,34 +276,36 @@
     <symbol id="i-dark" viewBox="0 0 24 24"><path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/></symbol>
     <symbol id="i-delete" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
   </defs></svg>
-  <div id="library">
-    <aside id="sidebar" aria-label="Bibliotheek">
+  <div id="library" data-i18n="" data-i18n-data-drop-label="drop">
+    <aside id="sidebar" aria-label="Bibliotheek" data-i18n="" data-i18n-aria-label="library">
       <div class="brand"><svg class="icon" aria-hidden="true"><use href="#i-lamp"/></svg>Leeslamp</div>
-      <div class="sidebar-heading eyebrow">Bibliotheek</div>
-      <nav id="filters" aria-label="Boekenfilter"></nav>
+      <div class="sidebar-heading eyebrow" data-i18n="library">Bibliotheek</div>
+      <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters"></nav>
       <div class="sidebar-bottom">
-        <button class="import" id="import-button">Importeren<svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
-        <button class="folder-button" id="link-folder" hidden>Map koppelen</button>
-        <button class="folder-button" id="folder-import" hidden>Map importeren</button>
-        <button class="folder-button" id="rescan" hidden>Opnieuw scannen</button>
-        <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span>Op dit apparaat</span><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
+        <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button class="folder-button" id="link-folder" hidden data-i18n="linkFolder">Map koppelen</button>
+        <button class="folder-button" id="folder-import" hidden data-i18n="importFolder">Map importeren</button>
+        <button class="folder-button" id="rescan" hidden data-i18n="rescan">Opnieuw scannen</button>
+        <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span data-i18n="device">Op dit apparaat</span><button id="lang" type="button" data-i18n="" data-i18n-title="languageSwitch" data-i18n-aria-label="languageSwitch" aria-pressed="false"><span data-language="nl">NL</span><span aria-hidden="true">/</span><span data-language="en">EN</span></button><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem" data-i18n="" data-i18n-title="mode_auto" data-i18n-aria-label="mode_auto"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
       </div>
     </aside>
     <main>
       <div class="library-content">
         <header class="library-header">
-          <div class="heading"><span class="eyebrow">Je eigen leesruimte</span><h1 id="filter-title">Alle boeken</h1></div>
-          <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur"></label><select id="sort" aria-label="Sorteren"><option value="opened">Laatst gelezen</option><option value="title">Titel</option><option value="author">Auteur</option><option value="added">Toegevoegd</option></select></div>
+          <div class="heading"><span class="eyebrow" data-i18n="tagline">Je eigen leesruimte</span><h1 id="filter-title" data-i18n="allBooks">Alle boeken</h1></div>
+          <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur" data-i18n="" data-i18n-placeholder="searchPlaceholder" data-i18n-aria-label="searchLabel"></label><select id="sort" aria-label="Sorteren" data-i18n="" data-i18n-aria-label="sort"><option value="opened" data-i18n="recent">Laatst gelezen</option><option value="title" data-i18n="title">Titel</option><option value="author" data-i18n="author">Auteur</option><option value="added" data-i18n="added">Toegevoegd</option></select></div>
         </header>
-        <div class="library-meta"><span id="library-count" role="status" aria-live="polite">0 boeken</span><span>Jouw boeken. Jouw tempo.</span></div>
+        <div class="library-meta"><span id="library-count" role="status" aria-live="polite" data-i18n="bookCountOther" data-i18n-params='{"count":0}'>0 boeken</span><span data-i18n="pace">Jouw boeken. Jouw tempo.</span></div>
         <div id="grid"></div>
         <div id="empty" hidden>
           <svg class="empty-mark" viewBox="0 0 120 132" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M20 8h80v112H20zM26 8v112M36 100h48M36 105h28M9 120h102"/><path d="M50 32h20l10 25H40l10-25Zm10 25v25M47 83h26" stroke-width="1.5"/><path d="M44 64h4m24 0h4M56 90h8"/></svg>
-          <h2>Ruimte voor je volgende boek.</h2><p>Sleep je boeken hierheen.<br>Je bibliotheek begint met één goed verhaal.</p>
-          <button class="import" id="empty-import"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Boeken toevoegen</button>
+          <h2 data-i18n="emptyTitle">Ruimte voor je volgende boek.</h2><p data-i18n="emptyText">Sleep je boeken hierheen.
+Je bibliotheek begint met één goed verhaal.</p>
+          <button class="import" id="empty-import"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-i18n="addBooks">Boeken toevoegen</span></button>
           <p class="formats">EPUB · MOBI · AZW · AZW3 · PRC · FB2 · FBZ · CBZ<br>PDF · TXT · MD · HTML · DOCX</p>
         </div>
-        <div id="no-results" hidden><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><h2>Even verder zoeken.</h2><p>Geen boeken in deze selectie.<br>Probeer een andere titel, auteur of filter.</p><button id="reset-filters">Toon alle boeken</button></div>
+        <div id="no-results" hidden><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><h2 data-i18n="noResultsTitle">Even verder zoeken.</h2><p data-i18n="noResultsText">Geen boeken in deze selectie.
+Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i18n="resetFilters">Toon alle boeken</button></div>
       </div>
     </main>
   </div>
@@ -306,30 +313,30 @@
   <input id="folder-input" type="file" webkitdirectory multiple hidden>
   <dialog id="category-dialog" aria-labelledby="category-title">
     <form id="category-form" method="dialog">
-      <h2 id="category-title">Categorie</h2>
-      <label for="category-select">Kies een categorie</label><select id="category-select"></select>
-      <div id="new-category-field" hidden><label for="new-category">Nieuwe categorie</label><input id="new-category" type="text" autocomplete="off"></div>
-      <div class="dialog-actions"><button value="cancel" formnovalidate>Annuleren</button><button class="import" id="category-submit" value="save">Importeren</button></div>
+      <h2 id="category-title" data-i18n="category">Categorie</h2>
+      <label for="category-select" data-i18n="chooseCategory">Kies een categorie</label><select id="category-select"></select>
+      <div id="new-category-field" hidden><label for="new-category" data-i18n="newCategory">Nieuwe categorie</label><input id="new-category" type="text" autocomplete="off"></div>
+      <div class="dialog-actions"><button value="cancel" formnovalidate data-i18n="cancel">Annuleren</button><button class="import" id="category-submit" value="save" data-i18n="import">Importeren</button></div>
     </form>
   </dialog>
-  <section id="reader" hidden aria-label="Boeklezer" tabindex="-1">
+  <section id="reader" hidden aria-label="Boeklezer" tabindex="-1" data-i18n="" data-i18n-aria-label="reader">
     <div id="r-body"></div>
-    <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span>Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false">Aa</button></div></div>
-    <div id="bottom-bar" class="reader-bar"><button id="prev" title="Vorige pagina" aria-label="Vorige pagina"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button><div class="slider-wrap"><span class="slider-rail" aria-hidden="true"><span id="slider-fill"></span></span><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks"><datalist id="ticks"></datalist></div><button id="next" title="Volgende pagina" aria-label="Volgende pagina"><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button><span id="progress-label">0%</span></div>
-    <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave"><div class="panel-heading"><h2>Inhoud</h2><button class="panel-close" data-close-panel title="Inhoudsopgave sluiten" aria-label="Inhoudsopgave sluiten"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="toc-list"></div></aside>
-    <aside id="prefs" class="popover" hidden aria-label="Leesvoorkeuren">
-      <div class="panel-heading"><h2>Jouw leesruimte</h2><button class="panel-close" data-close-panel title="Leesvoorkeuren sluiten" aria-label="Leesvoorkeuren sluiten"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
-      <div class="pref-group"><span class="pref-label">Licht &amp; papier</span><div id="themes" role="group" aria-label="Leesthema"></div></div>
-      <div class="pref-group"><span class="pref-label">Lettertype</span><div id="fonts" class="segments" role="group" aria-label="Lettertype"></div></div>
-      <div class="stepper"><span>Lettergrootte</span><button data-step="size:-1" title="Kleinere letters" aria-label="Kleinere letters">−</button><output id="size-value" aria-label="Lettergrootte">18</output><button data-step="size:1" title="Grotere letters" aria-label="Grotere letters">+</button></div>
-      <div class="stepper"><span>Regelafstand</span><button data-step="lh:-0.1" title="Kleinere regelafstand" aria-label="Kleinere regelafstand">−</button><output id="lh-value" aria-label="Regelafstand">1.5</output><button data-step="lh:0.1" title="Grotere regelafstand" aria-label="Grotere regelafstand">+</button></div>
-      <div class="stepper"><span>Tekstbreedte</span><button data-step="width:-1" title="Bredere tekst" aria-label="Bredere tekst">−</button><output id="width-value" aria-label="Breedtestand">2</output><button data-step="width:1" title="Smallere tekst" aria-label="Smallere tekst">+</button></div>
-      <div id="flow-row"><span class="pref-label">Weergave</span><div id="flows" class="segments" role="group" aria-label="Pagina of scrollen"><button data-flow="paginated">Pagina</button><button data-flow="scrolled">Scrollen</button></div></div>
-      <label id="justify-row">Tekst uitvullen<input id="justify" type="checkbox" checked></label>
+    <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek" data-i18n="" data-i18n-title="back" data-i18n-aria-label="back"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span data-i18n="library">Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false" data-i18n="" data-i18n-title="toc" data-i18n-aria-label="toc"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false" data-i18n="" data-i18n-title="readingPrefs" data-i18n-aria-label="readingPrefs">Aa</button></div></div>
+    <div id="bottom-bar" class="reader-bar"><button id="prev" title="Vorige pagina" aria-label="Vorige pagina" data-i18n="" data-i18n-title="prev" data-i18n-aria-label="prev"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button><div class="slider-wrap"><span class="slider-rail" aria-hidden="true"><span id="slider-fill"></span></span><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks" data-i18n="" data-i18n-aria-label="readingProgress"><datalist id="ticks"></datalist></div><button id="next" title="Volgende pagina" aria-label="Volgende pagina" data-i18n="" data-i18n-title="next" data-i18n-aria-label="next"><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button><span id="progress-label">0%</span></div>
+    <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave" data-i18n="" data-i18n-aria-label="toc"><div class="panel-heading"><h2 data-i18n="contents">Inhoud</h2><button class="panel-close" data-close-panel title="Inhoudsopgave sluiten" aria-label="Inhoudsopgave sluiten" data-i18n="" data-i18n-title="closeToc" data-i18n-aria-label="closeToc"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="toc-list"></div></aside>
+    <aside id="prefs" class="popover" hidden aria-label="Leesvoorkeuren" data-i18n="" data-i18n-aria-label="readingPrefs">
+      <div class="panel-heading"><h2 data-i18n="readingSpace">Jouw leesruimte</h2><button class="panel-close" data-close-panel title="Leesvoorkeuren sluiten" aria-label="Leesvoorkeuren sluiten" data-i18n="" data-i18n-title="closePrefs" data-i18n-aria-label="closePrefs"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+      <div class="pref-group"><span class="pref-label" data-i18n="paper">Licht &amp; papier</span><div id="themes" role="group" aria-label="Leesthema" data-i18n="" data-i18n-aria-label="readingTheme"></div></div>
+      <div class="pref-group"><span class="pref-label" data-i18n="font">Lettertype</span><div id="fonts" class="segments" role="group" aria-label="Lettertype" data-i18n="" data-i18n-aria-label="font"></div></div>
+      <div class="stepper"><span data-i18n="size">Lettergrootte</span><button data-step="size:-1" title="Kleinere letters" aria-label="Kleinere letters" data-i18n="" data-i18n-title="smaller" data-i18n-aria-label="smaller">−</button><output id="size-value" aria-label="Lettergrootte" data-i18n="" data-i18n-aria-label="size">18</output><button data-step="size:1" title="Grotere letters" aria-label="Grotere letters" data-i18n="" data-i18n-title="larger" data-i18n-aria-label="larger">+</button></div>
+      <div class="stepper"><span data-i18n="lineHeight">Regelafstand</span><button data-step="lh:-0.1" title="Kleinere regelafstand" aria-label="Kleinere regelafstand" data-i18n="" data-i18n-title="lessLineHeight" data-i18n-aria-label="lessLineHeight">−</button><output id="lh-value" aria-label="Regelafstand" data-i18n="" data-i18n-aria-label="lineHeight">1.5</output><button data-step="lh:0.1" title="Grotere regelafstand" aria-label="Grotere regelafstand" data-i18n="" data-i18n-title="moreLineHeight" data-i18n-aria-label="moreLineHeight">+</button></div>
+      <div class="stepper"><span data-i18n="width">Tekstbreedte</span><button data-step="width:-1" title="Bredere tekst" aria-label="Bredere tekst" data-i18n="" data-i18n-title="wider" data-i18n-aria-label="wider">−</button><output id="width-value" aria-label="Breedtestand" data-i18n="" data-i18n-aria-label="widthSetting">2</output><button data-step="width:1" title="Smallere tekst" aria-label="Smallere tekst" data-i18n="" data-i18n-title="narrower" data-i18n-aria-label="narrower">+</button></div>
+      <div id="flow-row"><span class="pref-label" data-i18n="layout">Weergave</span><div id="flows" class="segments" role="group" aria-label="Pagina of scrollen" data-i18n="" data-i18n-aria-label="layoutLabel"><button data-flow="paginated" data-i18n="page">Pagina</button><button data-flow="scrolled" data-i18n="scroll">Scrollen</button></div></div>
+      <label id="justify-row"><span data-i18n="justify">Tekst uitvullen</span><input id="justify" type="checkbox" checked></label>
     </aside>
   </section>
   <div id="toast" role="status" aria-live="polite" hidden></div>
-  <noscript>Schakel JavaScript in om je boeken te lezen.</noscript>
+  <noscript data-i18n="noScript">Schakel JavaScript in om je boeken te lezen. / Enable JavaScript to read your books.</noscript>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
