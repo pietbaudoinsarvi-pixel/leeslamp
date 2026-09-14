@@ -36,7 +36,7 @@ Gekoppelde boeken blijven op hun oorspronkelijke plek: IndexedDB bewaart alleen 
 De browser kan bij openen of opnieuw scannen opnieuw om leestoegang vragen. Houd de bronmap beschikbaar.
 Opnieuw scannen controleert alle gekoppelde mappen, voegt nieuwe boeken toe en verwijdert verdwenen paden uit de bibliotheek.
 Verplaatsen is een verdwenen en een nieuw pad: het nieuwe pad krijgt de categorie van zijn eerste submap en nieuwe leesvoortgang.
-Een handmatig gewijzigde categorie blijft bij een ongewijzigd pad behouden. Verwijderen in Leeslamp wist nooit het bronbestand; een volgende scan voegt het opnieuw toe.
+Een handmatig gewijzigde categorie blijft bij een ongewijzigd pad behouden. Verwijderen wist nooit een bronbestand: een geïmporteerd boek verdwijnt uit de bibliotheek, een boek uit een gekoppelde map wordt alleen verborgen en komt bij een volgende scan niet terug.
 De scan toont eerst bestandsnamen en vult metadata en omslagen vervolgens één voor één aan. Ongewijzigde grootte en wijzigingsdatum slaan afgeronde metadata over.
 Na afsluiten tijdens een scan kun je Opnieuw scannen gebruiken om ontbrekende metadata alsnog te verwerken.
 Zonder File System Access API verschijnt Map importeren: dezelfde mapindeling, maar bestanden worden dan gekopieerd naar IndexedDB en niet gekoppeld.

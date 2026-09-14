@@ -46,7 +46,6 @@ const tx = async (store, mode, fn) => {
 const put = (store, obj) => tx(store, 'readwrite', s => s.put(obj));
 const get = (store, id) => tx(store, 'readonly', s => s.get(id));
 const all = store => tx(store, 'readonly', s => s.getAll());
-const del = (store, id) => tx(store, 'readwrite', s => s.delete(id));
 // Import/delete are atomic across both stores, including quota failures.
 const bookTransaction = async (record, file, remove = false) => {
     const db = await database();
@@ -143,13 +142,15 @@ const coverBlobs = new Map();
 // Stagger only covers not yet presented this session; searching never replays the grid.
 const presentedBooks = new Set();
 const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
-const categories = () => [...new Set(books.map(b => b.category))].sort(collator.compare);
+const visibleBooks = () => books.filter(book => !book.hidden);
+const categories = () => [...new Set(visibleBooks().map(book => book.category))].sort(collator.compare);
 const categoryFilter = () => filter.startsWith('category:');
 const filterName = () => categoryFilter() ? filter.slice(9) || 'Geen categorie'
     : filter === 'all' ? 'Alle boeken' : filter === 'recent' ? 'Laatst gelezen' : filter.toUpperCase();
 function renderFilters() {
     const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
-    if (!['all', 'recent'].includes(filter) && !books.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
+    const visible = visibleBooks();
+    if (!['all', 'recent'].includes(filter) && !visible.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
     const fragment = document.createDocumentFragment();
     const add = (value, label, count) => {
         const button = el('button', '', label);
@@ -158,13 +159,13 @@ function renderFilters() {
         button.append(el('span', 'count', count));
         fragment.append(button);
     };
-    add('all', 'Alle boeken', books.length);
-    add('recent', 'Laatst gelezen', books.filter(b => b.opened).length);
-    if (books.length) fragment.append(el('div', 'section-label', 'Categorieën'));
-    for (const category of categories()) add(`category:${category}`, category || 'Geen categorie', books.filter(b => b.category === category).length);
-    const extensions = [...new Set(books.map(b => b.ext))].sort();
+    add('all', 'Alle boeken', visible.length);
+    add('recent', 'Laatst gelezen', visible.filter(b => b.opened).length);
+    if (visible.length) fragment.append(el('div', 'section-label', 'Categorieën'));
+    for (const category of categories()) add(`category:${category}`, category || 'Geen categorie', visible.filter(b => b.category === category).length);
+    const extensions = [...new Set(visible.map(b => b.ext))].sort();
     if (extensions.length) fragment.append(el('div', 'section-label', 'Formaat'));
-    for (const ext of extensions) add(ext, ext.toUpperCase(), books.filter(b => b.ext === ext).length);
+    for (const ext of extensions) add(ext, ext.toUpperCase(), visible.filter(b => b.ext === ext).length);
     $('#filters').replaceChildren(fragment);
     if (focusedFilter) [...$('#filters').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filter-title').textContent = filterName();
@@ -172,7 +173,8 @@ function renderFilters() {
 function renderLibrary() {
     renderFilters();
     const sort = $('#sort').value;
-    const visible = books.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'recent' ? b.opened : b.ext === filter))
+    const allBooks = visibleBooks();
+    const visible = allBooks.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'recent' ? b.opened : b.ext === filter))
         && `${b.title} ${b.author}`.toLocaleLowerCase('nl').includes(query));
     visible.sort((a, b) => {
         if (sort === 'title' || sort === 'author') return collator.compare(a[sort], b[sort]) || collator.compare(a.title, b.title);
@@ -180,7 +182,7 @@ function renderLibrary() {
     });
     const fragment = document.createDocumentFragment();
     const retiredURLs = [];
-    const currentCovers = new Map(books.map(book => [book.id, book.cover]));
+    const currentCovers = new Map(visibleBooks().map(book => [book.id, book.cover]));
     for (const [id, url] of coverURLs) {
         if (currentCovers.get(id) !== coverBlobs.get(id)) {
             retiredURLs.push(url); coverURLs.delete(id); coverBlobs.delete(id);
@@ -246,9 +248,9 @@ function renderLibrary() {
     $('#grid').replaceChildren(fragment);
     // Detach every old image before revoking URLs it could still request lazily.
     for (const url of retiredURLs) URL.revokeObjectURL(url);
-    $('#library-count').textContent = `${visible.length} ${visible.length === 1 ? 'boek' : 'boeken'}${visible.length !== books.length ? ` van ${books.length}` : ''}`;
-    $('#empty').hidden = books.length !== 0;
-    $('#no-results').hidden = !books.length || visible.length !== 0;
+    $('#library-count').textContent = `${visible.length} ${visible.length === 1 ? 'boek' : 'boeken'}${visible.length !== allBooks.length ? ` van ${allBooks.length}` : ''}`;
+    $('#empty').hidden = allBooks.length !== 0;
+    $('#no-results').hidden = !allBooks.length || visible.length !== 0;
 }
 $('#grid').addEventListener('animationend', event => {
     const card = event.target.closest('.card');
@@ -284,11 +286,19 @@ $('#grid').addEventListener('click', async e => {
     }
     if (e.target.closest('[data-delete]')) {
         if (importing) return;
-        if (!confirm(`"${record.title}" verwijderen?`)) return;
+        const label = record.source.kind === 'fs'
+            ? `"${record.title}" verbergen? Het bestand blijft in de map staan.`
+            : `"${record.title}" verwijderen?`;
+        if (!confirm(label)) return;
         try {
-            await bookTransaction(record, null, true);
+            if (record.source.kind === 'fs') {
+                await put('books', { ...record, hidden: true });
+                record.hidden = true;
+            } else {
+                await bookTransaction(record, null, true);
+                books = books.filter(b => b.id !== record.id);
+            }
             presentedBooks.delete(record.id);
-            books = books.filter(b => b.id !== record.id);
             renderLibrary();
         } catch (error) { report('Verwijderen is mislukt.', error); }
     } else if (e.target.closest('.book-open')) await openBook(record);
@@ -651,8 +661,14 @@ function saveProgress(session, final = false) {
     }
     session.lastSave = Date.now();
     session.dirty = false;
-    const snapshot = { ...session.record };
-    session.writes = session.writes.then(() => put('books', snapshot)).catch(error => {
+    session.writes = session.writes.then(() => tx('books', 'readwrite', store => {
+        const request = store.get(session.record.id);
+        request.onsuccess = () => {
+            const current = request.result || session.record;
+            store.put({ ...current, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened });
+        };
+        return request;
+    })).catch(error => {
         session.dirty = true;
         report('Je leesvoortgang kon niet worden opgeslagen.', error);
     });
