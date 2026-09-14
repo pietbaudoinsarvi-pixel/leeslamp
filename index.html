@@ -113,6 +113,14 @@
     .arriving .progress-track span { animation:progress-in 600ms var(--ease) both; animation-delay:calc(var(--delay,0ms) + 300ms); }
     .delete { position:absolute; right:6px; top:6px; padding:6px; min-height:32px; width:32px; background:var(--card); color:var(--fg); border:1px solid var(--line); opacity:0; }
     .delete .icon { width:16px; height:16px; }
+    .category-change { right:44px; font-size:20px; line-height:18px; }
+    #category-dialog { width:min(360px,calc(100% - 32px)); padding:24px; border:1px solid var(--line); border-radius:2px; background:var(--bg); color:var(--fg); box-shadow:var(--shadow); }
+    #category-dialog::backdrop { background:#18251c66; }
+    #category-dialog h2 { margin:0 0 20px; font-size:20px; font-weight:500; }
+    #category-dialog label { display:block; font-size:12px; }
+    #category-dialog select,#category-dialog input { width:100%; margin:8px 0 20px; padding:8px; background:var(--card); border:1px solid var(--line); border-radius:2px; }
+    .dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
+    .folder-button { text-align:left; border:1px solid var(--line); font-size:12px; }
     .card:hover .delete,.card:focus-within .delete { opacity:1; }
     #empty,#no-results { text-align:center; color:var(--mute); padding:clamp(48px,12vh,140px) 0 32px; max-width:520px; margin:auto; }
     .empty-mark { width:120px; height:132px; color:var(--accent); margin-bottom:28px; }
@@ -217,7 +225,7 @@
       .brand { padding:0; font-size:16px; gap:8px; }
       .brand svg { width:22px; height:28px; }
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
-      .sidebar-bottom { grid-column:2; grid-row:1; flex-direction:row; padding:0; margin:0; border:0; gap:8px; }
+      .sidebar-bottom { grid-column:1/-1; grid-row:2; flex-direction:row; flex-wrap:wrap; padding:12px 0 0; margin:0; border:0; gap:8px; }
       .sidebar-bottom .import { width:auto; padding:8px 10px; gap:8px; font-size:11px; }
       .device-note { padding:0; }
       #filters { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:16px 0 10px; overflow-x:auto; }
@@ -270,6 +278,9 @@
       <nav id="filters" aria-label="Boekenfilter"></nav>
       <div class="sidebar-bottom">
         <button class="import" id="import-button">Importeren<svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button class="folder-button" id="link-folder" hidden>Map koppelen</button>
+        <button class="folder-button" id="folder-import" hidden>Map importeren</button>
+        <button class="folder-button" id="rescan" hidden>Opnieuw scannen</button>
         <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span>Op dit apparaat</span><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
       </div>
     </aside>
@@ -292,6 +303,15 @@
     </main>
   </div>
   <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx">
+  <input id="folder-input" type="file" webkitdirectory multiple hidden>
+  <dialog id="category-dialog" aria-labelledby="category-title">
+    <form id="category-form" method="dialog">
+      <h2 id="category-title">Categorie</h2>
+      <label for="category-select">Kies een categorie</label><select id="category-select"></select>
+      <div id="new-category-field" hidden><label for="new-category">Nieuwe categorie</label><input id="new-category" type="text" autocomplete="off"></div>
+      <div class="dialog-actions"><button value="cancel" formnovalidate>Annuleren</button><button class="import" id="category-submit" value="save">Importeren</button></div>
+    </form>
+  </dialog>
   <section id="reader" hidden aria-label="Boeklezer" tabindex="-1">
     <div id="r-body"></div>
     <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span>Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false">Aa</button></div></div>

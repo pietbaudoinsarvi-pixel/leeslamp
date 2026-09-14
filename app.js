@@ -19,9 +19,11 @@ const icon = name => {
 };
 let dbPromise;
 const database = () => dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open('leeslamp', 1);
+    const request = indexedDB.open('leeslamp', 2);
     request.onupgradeneeded = () => {
-        for (const name of ['files', 'books']) request.result.createObjectStore(name, { keyPath: 'id' });
+        for (const name of ['files', 'books', 'roots']) {
+            if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, { keyPath: 'id' });
+        }
     };
     request.onsuccess = () => {
         request.result.onversionchange = () => { request.result.close(); dbPromise = null; };
@@ -135,15 +137,19 @@ $('#mode').addEventListener('click', () => {
 systemTheme.addEventListener('change', applyMode);
 
 // Library. Only metadata and small cover blobs are loaded on startup.
-let books = [], filter = 'all', query = '', searchTimer, importing = false;
+let books = [], roots = [], filter = 'all', query = '', searchTimer, importing = false;
 const coverURLs = new Map();
+const coverBlobs = new Map();
 // Stagger only covers not yet presented this session; searching never replays the grid.
 const presentedBooks = new Set();
 const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
-const filterName = () => filter === 'all' ? 'Alle boeken' : filter === 'recent' ? 'Laatst gelezen' : filter.toUpperCase();
+const categories = () => [...new Set(books.map(b => b.category))].sort(collator.compare);
+const categoryFilter = () => filter.startsWith('category:');
+const filterName = () => categoryFilter() ? filter.slice(9) || 'Geen categorie'
+    : filter === 'all' ? 'Alle boeken' : filter === 'recent' ? 'Laatst gelezen' : filter.toUpperCase();
 function renderFilters() {
     const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
-    if (!['all', 'recent'].includes(filter) && !books.some(b => b.ext === filter)) filter = 'all';
+    if (!['all', 'recent'].includes(filter) && !books.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
     const fragment = document.createDocumentFragment();
     const add = (value, label, count) => {
         const button = el('button', '', label);
@@ -154,6 +160,8 @@ function renderFilters() {
     };
     add('all', 'Alle boeken', books.length);
     add('recent', 'Laatst gelezen', books.filter(b => b.opened).length);
+    if (books.length) fragment.append(el('div', 'section-label', 'Categorieën'));
+    for (const category of categories()) add(`category:${category}`, category || 'Geen categorie', books.filter(b => b.category === category).length);
     const extensions = [...new Set(books.map(b => b.ext))].sort();
     if (extensions.length) fragment.append(el('div', 'section-label', 'Formaat'));
     for (const ext of extensions) add(ext, ext.toUpperCase(), books.filter(b => b.ext === ext).length);
@@ -164,13 +172,20 @@ function renderFilters() {
 function renderLibrary() {
     renderFilters();
     const sort = $('#sort').value;
-    const visible = books.filter(b => (filter === 'all' || (filter === 'recent' ? b.opened : b.ext === filter))
+    const visible = books.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'recent' ? b.opened : b.ext === filter))
         && `${b.title} ${b.author}`.toLocaleLowerCase('nl').includes(query));
     visible.sort((a, b) => {
         if (sort === 'title' || sort === 'author') return collator.compare(a[sort], b[sort]) || collator.compare(a.title, b.title);
         return (sort === 'opened' ? (b.opened ?? 0) - (a.opened ?? 0) : 0) || b.added - a.added;
     });
     const fragment = document.createDocumentFragment();
+    const retiredURLs = [];
+    const currentCovers = new Map(books.map(book => [book.id, book.cover]));
+    for (const [id, url] of coverURLs) {
+        if (currentCovers.get(id) !== coverBlobs.get(id)) {
+            retiredURLs.push(url); coverURLs.delete(id); coverBlobs.delete(id);
+        }
+    }
     let arrival = 0;
     for (const book of visible) {
         const card = el('div', 'card');
@@ -185,7 +200,9 @@ function renderLibrary() {
         open.title = `${book.title}${book.author ? ` · ${book.author}` : ''}`;
         const cover = el('span', 'cover');
         if (book.cover) {
-            if (!coverURLs.has(book.id)) coverURLs.set(book.id, URL.createObjectURL(book.cover));
+            if (!coverURLs.has(book.id)) {
+                coverURLs.set(book.id, URL.createObjectURL(book.cover)); coverBlobs.set(book.id, book.cover);
+            }
             const image = el('img');
             image.src = coverURLs.get(book.id);
             image.alt = '';
@@ -218,10 +235,17 @@ function renderLibrary() {
         remove.dataset.delete = 'true';
         remove.title = `${book.title} verwijderen`;
         remove.setAttribute('aria-label', remove.title);
-        card.append(open, remove);
+        const change = el('button', 'delete category-change', '⋯');
+        change.dataset.category = 'true';
+        change.title = `Categorie wijzigen: ${book.title}`;
+        change.setAttribute('aria-label', change.title);
+        change.disabled = remove.disabled = importing;
+        card.append(open, change, remove);
         fragment.append(card);
     }
     $('#grid').replaceChildren(fragment);
+    // Detach every old image before revoking URLs it could still request lazily.
+    for (const url of retiredURLs) URL.revokeObjectURL(url);
     $('#library-count').textContent = `${visible.length} ${visible.length === 1 ? 'boek' : 'boeken'}${visible.length !== books.length ? ` van ${books.length}` : ''}`;
     $('#empty').hidden = books.length !== 0;
     $('#no-results').hidden = !books.length || visible.length !== 0;
@@ -248,12 +272,21 @@ $('#grid').addEventListener('click', async e => {
     if (!card) return;
     const record = books.find(b => b.id === card.dataset.id);
     if (!record) return;
+    if (e.target.closest('[data-category]')) {
+        if (importing) return;
+        const category = await chooseCategory(record.category, true);
+        if (category === null) return;
+        try {
+            await put('books', { ...record, category });
+            record.category = category; renderLibrary();
+        } catch (error) { report('Categorie opslaan is mislukt.', error); }
+        return;
+    }
     if (e.target.closest('[data-delete]')) {
+        if (importing) return;
         if (!confirm(`"${record.title}" verwijderen?`)) return;
         try {
             await bookTransaction(record, null, true);
-            URL.revokeObjectURL(coverURLs.get(record.id));
-            coverURLs.delete(record.id);
             presentedBooks.delete(record.id);
             books = books.filter(b => b.id !== record.id);
             renderLibrary();
@@ -348,32 +381,228 @@ async function importMetadata(file, kind) {
     }
     return { title: '', author: '', cover: null };
 }
-async function importFiles(files) {
+function chooseCategory(current = '', change = false) {
+    const dialog = $('#category-dialog'), select = $('#category-select'), input = $('#new-category');
+    if (dialog.open) return Promise.resolve(null);
+    const values = ['', ...categories().filter(Boolean)];
+    select.replaceChildren(...values.map((value, index) => {
+        const option = el('option', '', value || 'Geen categorie'); option.value = String(index); return option;
+    }), Object.assign(el('option', '', '+ Nieuwe categorie…'), { value: 'new' }));
+    select.value = String(Math.max(0, values.indexOf(current)));
+    input.value = ''; input.required = false; $('#new-category-field').hidden = true;
+    $('#category-submit').textContent = change ? 'Opslaan' : 'Importeren';
+    dialog.returnValue = '';
+    return new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'save'
+            ? select.value === 'new' ? input.value.trim() : values[Number(select.value)] : null), { once: true });
+        dialog.showModal();
+    });
+}
+$('#category-select').addEventListener('change', e => {
+    const creating = e.target.value === 'new';
+    $('#new-category-field').hidden = !creating;
+    $('#new-category').required = creating;
+    if (creating) $('#new-category').focus();
+});
+$('#category-form').addEventListener('submit', e => {
+    if (e.submitter?.value === 'cancel') return;
+    if ($('#category-select').value === 'new' && !$('#new-category').value.trim()) {
+        e.preventDefault(); $('#new-category').focus();
+    }
+});
+const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
+function setImporting(value) {
+    importing = value;
+    for (const selector of ['#import-button', '#empty-import', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
+    for (const button of $('#grid').querySelectorAll('.delete')) button.disabled = value;
+    $('#rescan').hidden = !roots.some(root => root.linked);
+}
+const filenameTitle = name => name.replace(/\.[^.]+$/, '');
+function newRecord(file, category, source, id = crypto.randomUUID()) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    return { id, name: file.name, ext, kind: kindFor(ext), category, source,
+        title: filenameTitle(file.name), author: '', cover: null, metadataReady: false,
+        size: file.size, lastModified: file.lastModified, added: Date.now(), opened: null, fraction: 0, loc: null };
+}
+async function importFiles(files, categoryForFile) {
     if (importing) { toast('Er worden al boeken geïmporteerd. Probeer het zo opnieuw.'); return; }
     if (!files.length) return;
-    importing = true;
-    $('#import-button').disabled = $('#empty-import').disabled = true;
+    setImporting(true);
+    if (!categoryForFile) {
+        const category = await chooseCategory();
+        if (category === null) { setImporting(false); return; }
+        categoryForFile = () => category;
+    }
     let count = 0;
     const failures = [];
+    let lastRender = performance.now();
     for (const [index, file] of [...files].entries()) {
         toast(`Importeren… ${index + 1}/${files.length}`, 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
         if (!kind) { failures.push(`${file.name}: Dit bestandstype wordt niet ondersteund`); continue; }
         try {
-            const meta = await importMetadata(file, kind);
-            const record = { id: crypto.randomUUID(), name: file.name, ext, kind,
-                title: meta.title.trim() || file.name.replace(/\.[^.]+$/, ''), author: meta.author || '', cover: meta.cover,
-                added: Date.now(), opened: null, fraction: 0, loc: null };
+            const record = newRecord(file, categoryForFile(file), { kind: 'blob' });
+            try {
+                const meta = await importMetadata(file, kind);
+                Object.assign(record, meta, { title: meta.title.trim() || record.title, metadataReady: true });
+            } catch (error) { console.warn(file.name, error); failures.push(`${file.name}: metadata overgeslagen`); }
             await bookTransaction(record, file);
             books.push(record);
             count++;
         } catch (error) { console.error(error); failures.push(`${file.name}: importeren mislukt`); }
+        if (performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
+        await yieldUI();
     }
-    importing = false;
-    $('#import-button').disabled = $('#empty-import').disabled = false;
+    setImporting(false);
     renderLibrary();
     toast([`${count} ${count === 1 ? 'boek toegevoegd' : 'boeken toegevoegd'}`, ...failures].join('\n'), failures.length ? 12000 : 4000);
 }
+
+// File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
+async function readPermission(handle) {
+    if (await handle.queryPermission({ mode: 'read' }) === 'granted') return true;
+    return await handle.requestPermission({ mode: 'read' }) === 'granted';
+}
+async function resolveFile(root, path) {
+    const parts = path.split('/');
+    let directory = root.handle;
+    for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+    return (await directory.getFileHandle(parts.at(-1))).getFile();
+}
+async function enumerate(directory, entries, prefix = '', category = '') {
+    let visited = 0;
+    for await (const [name, handle] of directory.entries()) {
+        const path = prefix + name;
+        if (handle.kind === 'directory') await enumerate(handle, entries, `${path}/`, prefix ? category : name);
+        else if (kindFor(name.split('.').pop().toLowerCase())) entries.push({ path, category, handle });
+        if (++visited % 50 === 0) await yieldUI();
+    }
+}
+const writeBookBatch = (records, removed = []) => tx('books', 'readwrite', store => {
+    for (const record of records) store.put(record);
+    for (const record of removed) store.delete(record.id);
+});
+async function scanRoots(selected) {
+    const work = [], failures = [];
+    let found = 0, added = 0, lastRender = 0;
+    const refresh = (force = false) => {
+        if (force || performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
+    };
+    for (const root of selected) {
+        toast(`Scannen… ${root.name}`, 0);
+        const entries = [];
+        try { await enumerate(root.handle, entries); }
+        catch (error) {
+            console.warn(root.name, error); failures.push(`${root.name}: map niet volledig leesbaar, bestaande boeken behouden`); continue;
+        }
+        found += entries.length;
+        const existing = new Map(books.filter(b => b.source.kind === 'fs' && b.source.root === root.id).map(b => [b.id, b]));
+        const seen = new Set(entries.map(entry => `fs:${root.id}:${entry.path}`));
+        // Publish filename records before doing any metadata parsing. Commit at most ten at a time.
+        let batch = [];
+        const commit = async () => {
+            await writeBookBatch(batch);
+            for (const record of batch) if (!existing.has(record.id)) books.push(record);
+            batch = []; refresh(); await yieldUI();
+        };
+        for (const entry of entries) {
+            const id = `fs:${root.id}:${entry.path}`;
+            let record = existing.get(id);
+            if (!record) {
+                record = newRecord({ name: entry.path.split('/').at(-1) }, entry.category,
+                    { kind: 'fs', root: root.id, path: entry.path }, id);
+                added++; batch.push(record);
+            }
+            work.push({ ...entry, record });
+            if (batch.length === 10) await commit();
+        }
+        if (batch.length) await commit();
+        const missing = [...existing.values()].filter(record => !seen.has(record.id));
+        // Never prune on an incomplete enumeration. Close an open missing book before deleting its progress.
+        if (missing.some(record => record.id === active?.record.id)) await closeBook();
+        for (let i = 0; i < missing.length; i += 10) await writeBookBatch([], missing.slice(i, i + 10));
+        const missingIds = new Set(missing.map(record => record.id));
+        books = books.filter(record => !missingIds.has(record.id));
+        for (const id of missingIds) presentedBooks.delete(id);
+        refresh();
+    }
+    refresh(true);
+    let batch = [], completed = 0;
+    for (const { handle, record } of work) {
+        toast(`Scannen… ${completed}/${found}`, 0);
+        try {
+            const file = await handle.getFile();
+            if (!record.metadataReady || record.size !== file.size || record.lastModified !== file.lastModified) {
+                // Failed work stays pending; an interrupted write retains the old size/mtime or pending record.
+                record.metadataReady = false;
+                record.size = file.size; record.lastModified = file.lastModified;
+                const meta = await importMetadata(file, record.kind);
+                Object.assign(record, meta, { title: meta.title.trim() || filenameTitle(record.name), metadataReady: true });
+                batch.push(record);
+            }
+        } catch (error) {
+            console.warn(record.name, error); failures.push(`${record.name}: metadata niet beschikbaar`);
+            batch.push(record);
+        }
+        completed++;
+        if (completed % 10 === 0 || completed === work.length) {
+            if (batch.length) await writeBookBatch(batch);
+            batch = [];
+        }
+        toast(`Scannen… ${completed}/${found}`, 0);
+        refresh(); await yieldUI();
+    }
+    refresh(true);
+    toast([`${found} boeken gevonden, ${added} nieuw`, ...failures].join('\n'), failures.length ? 12000 : 4000);
+    return { found, added, failures };
+}
+async function linkFolder(handle) {
+    if (importing || $('#category-dialog').open) throw new Error('Er loopt al een import');
+    if (handle?.kind !== 'directory') throw new Error('Kies een map');
+    setImporting(true);
+    try {
+        if (!await readPermission(handle)) throw new Error('Geen leestoegang tot de map');
+        let root;
+        for (const candidate of roots) {
+            if (await handle.isSameEntry(candidate.handle)) { root = candidate; break; }
+        }
+        if (!root) {
+            root = { id: crypto.randomUUID(), name: handle.name, handle, linked: true };
+            await put('roots', root); roots.push(root);
+        }
+        return await scanRoots([root]);
+    } finally { setImporting(false); }
+}
+async function rescan() {
+    if (importing || $('#category-dialog').open) throw new Error('Er loopt al een import');
+    setImporting(true);
+    try {
+        // Start all permission checks within the button's user gesture, before enumeration.
+        const permissions = await Promise.all(roots.filter(root => root.linked).map(async root => {
+            try { return { root, allowed: await readPermission(root.handle) }; }
+            catch { return { root, allowed: false }; }
+        }));
+        const denied = permissions.filter(item => !item.allowed);
+        const result = await scanRoots(permissions.filter(item => item.allowed).map(item => item.root));
+        if (denied.length) toast(`${result.found} boeken gevonden, ${result.added} nieuw\nGeen leestoegang: ${denied.map(item => item.root.name).join(', ')}. Bestaande boeken behouden.`, 12000);
+        return result;
+    } finally { setImporting(false); }
+}
+$('#link-folder').hidden = typeof window.showDirectoryPicker !== 'function';
+$('#folder-import').hidden = !$('#link-folder').hidden;
+$('#link-folder').addEventListener('click', async () => {
+    try { await linkFolder(await window.showDirectoryPicker({ mode: 'read' })); }
+    catch (error) { if (error.name !== 'AbortError') report('Map koppelen is mislukt.', error); }
+});
+$('#rescan').addEventListener('click', () => rescan().catch(error => report('Scannen is mislukt. Probeer opnieuw.', error)));
+$('#folder-import').addEventListener('click', () => $('#folder-input').click());
+$('#folder-input').addEventListener('change', e => {
+    const files = [...e.target.files].filter(file => kindFor(file.name.split('.').pop().toLowerCase())); e.target.value = '';
+    // webkitRelativePath includes the selected root name; categories start just below that root.
+    void importFiles(files, file => {
+        const parts = file.webkitRelativePath.split('/'); return parts.length > 2 ? parts[1] : '';
+    });
+});
 for (const id of ['#import-button', '#empty-import']) $(id).addEventListener('click', () => $('#file-input').click());
 $('#file-input').addEventListener('change', e => { const files = [...e.target.files]; e.target.value = ''; void importFiles(files); });
 let dragDepth = 0;
@@ -387,8 +616,19 @@ $('#library').addEventListener('dragover', e => {
 $('#library').addEventListener('dragleave', () => {
     if (--dragDepth <= 0) { dragDepth = 0; $('#library').classList.remove('dragging'); }
 });
-$('#library').addEventListener('drop', e => {
-    e.preventDefault(); dragDepth = 0; $('#library').classList.remove('dragging'); void importFiles([...e.dataTransfer.files]);
+$('#library').addEventListener('drop', async e => {
+    e.preventDefault(); dragDepth = 0; $('#library').classList.remove('dragging');
+    const files = [...e.dataTransfer.files];
+    // Capture promises synchronously: the drag data store expires after this event dispatch.
+    const pending = [...e.dataTransfer.items].filter(item => item.kind === 'file').map(item => item.getAsFileSystemHandle?.());
+    try {
+        const handles = await Promise.all(pending);
+        if (handles.some(handle => handle?.kind === 'directory')) {
+            for (const handle of handles) if (handle?.kind === 'directory') await linkFolder(handle);
+            const loose = await Promise.all(handles.filter(handle => handle?.kind === 'file').map(handle => handle.getFile()));
+            if (loose.length) await importFiles(loose);
+        } else await importFiles(files);
+    } catch (error) { report('Toevoegen is mislukt. Gebruik Importeren of de mapknop.', error); }
 });
 
 // One reader session owns every timer, observer, frame, listener and render task.
@@ -511,13 +751,20 @@ async function openBook(record) {
         if (document.hidden) { session.capture?.(); void saveProgress(session, true); }
     });
     listen(session, window, 'pagehide', () => { session.capture?.(); void saveProgress(session, true); });
+    let resolvingFile = true;
     try {
-        const stored = await get('files', record.id);
+        let file;
+        if (record.source.kind === 'fs') {
+            const root = roots.find(root => root.id === record.source.root);
+            if (!root || !await readPermission(root.handle)) throw new Error('Geen leestoegang');
+            file = await resolveFile(root, record.source.path);
+        } else file = (await get('files', record.id))?.file;
         if (!live(session)) return;
-        if (!stored?.file) throw new Error('Bestand ontbreekt in de opslag');
-        if (record.kind === 'foliate') await openFoliate(session, stored.file);
-        else if (record.kind === 'pdf') await openPDF(session, stored.file);
-        else await openText(session, stored.file);
+        if (!file) throw new Error('Bestand ontbreekt in de opslag');
+        resolvingFile = false;
+        if (record.kind === 'foliate') await openFoliate(session, file);
+        else if (record.kind === 'pdf') await openPDF(session, file);
+        else await openText(session, file);
         if (!live(session)) return;
         session.ready = true;
         record.opened = Date.now(); session.dirty = true;
@@ -527,7 +774,11 @@ async function openBook(record) {
         session.pane?.focus({ preventScroll: true });
         showBars();
     } catch (error) {
-        if (live(session)) { await closeBook(); report(`“${record.title}” kon niet worden geopend. Controleer het bestand en je verbinding.`, error); }
+        if (live(session)) {
+            await closeBook();
+            report(resolvingFile ? `Bestand niet gevonden: ${record.name}`
+                : `“${record.title}” kon niet worden geopend. Controleer het bestand en je verbinding.`, error);
+        }
     }
 }
 function disposeView(view) {
@@ -548,8 +799,7 @@ async function closeBook() {
     for (const cleanup of session.cleanups) { try { cleanup(); } catch (error) { console.warn(error); } }
     if (session.view && !session.openingView) disposeView(session.view);
     for (const url of session.urls) URL.revokeObjectURL(url);
-    for (const url of coverURLs.values()) URL.revokeObjectURL(url);
-    coverURLs.clear();
+    // Library covers outlive reader sessions, including pending lazy image loads.
     closePanels(); $('#toc-list').replaceChildren(); $('#r-body').replaceChildren();
     $('#reader').hidden = true; $('#library').hidden = false;
     hideBars(false);
@@ -856,7 +1106,7 @@ async function openText(session, file) {
     });
     // Fonts and embedded images affect scroll height; restore once they have settled.
     await document.fonts.ready;
-    await Promise.all([...article.images].map(image => image.decode().catch(() => {})));
+    await Promise.all([...article.querySelectorAll('img')].map(image => image.decode().catch(() => {})));
     if (live(session)) setupScroll(session);
 }
 
@@ -947,6 +1197,11 @@ $('#justify').addEventListener('change', e => {
 });
 
 applyMode(); syncPreferences();
-try { books = await all('books'); renderLibrary(); }
+try {
+    books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
+    roots = await all('roots');
+    setImporting(false); renderLibrary();
+}
 catch (error) { report('De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.', error); }
+window.__leeslamp = { linkFolder, rescan };
 navigator.serviceWorker?.register('./sw.js').catch(error => console.warn('Offline opslag niet beschikbaar', error));

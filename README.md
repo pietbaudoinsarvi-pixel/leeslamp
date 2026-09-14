@@ -19,7 +19,26 @@ Ondersteunt EPUB, MOBI, AZW, AZW3, PRC, FB2, FBZ en CBZ via foliate-js.
 Leest ook PDF, TXT, MD/MARKDOWN, HTML/HTM en DOCX; CBR en DRM zijn niet ondersteund.
 Start lokaal met `npx serve .` of een andere statische HTTP-server en open het getoonde adres.
 Deploy op Vercel als statische site, zonder buildopdracht; publiceer de repositoryroot.
-Boeken en voortgang blijven in IndexedDB op dit apparaat; voorkeuren staan in localStorage.
-Importeer via Importeren of slepen; open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk.
+Los geïmporteerde boeken en voortgang blijven in IndexedDB op dit apparaat; voorkeuren staan in localStorage.
+Importeer via Importeren of slepen. Kies voor de hele selectie een categorie, Geen categorie of + Nieuwe categorie….
+Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart wijzig je de categorie.
+Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk.
 De app werkt offline na de eerste online laadbeurt; PDF/DOCX/Markdown en fonts moeten eerst online geladen zijn.
 Vereist een moderne browser met native adoptedStyleSheets; HTTPS of localhost voor PWA, PNG-iconen volgen apart.
+
+## Mappen en categorieën
+Gebruik Map koppelen in Edge/Chrome of sleep een map naar de bibliotheek.
+De directe submappen van de gekozen map zijn categorieën, met hun oorspronkelijke namen.
+Alle diepere submappen worden doorzocht en blijven bij die eerste categorie; boeken direct in de gekozen map krijgen Geen categorie.
+Ondersteunde bestanden: epub, mobi, azw, azw3, prc, fb2, fbz, cbz, pdf, txt, md, markdown, html, htm en docx.
+Andere bestanden, waaronder mp3, mov, jpg, rar en zip, worden bij een mapscan genegeerd.
+Gekoppelde boeken blijven op hun oorspronkelijke plek: IndexedDB bewaart alleen de maptoegang, relatieve paden, metadata, kleine omslagen en leesvoortgang.
+De browser kan bij openen of opnieuw scannen opnieuw om leestoegang vragen. Houd de bronmap beschikbaar.
+Opnieuw scannen controleert alle gekoppelde mappen, voegt nieuwe boeken toe en verwijdert verdwenen paden uit de bibliotheek.
+Verplaatsen is een verdwenen en een nieuw pad: het nieuwe pad krijgt de categorie van zijn eerste submap en nieuwe leesvoortgang.
+Een handmatig gewijzigde categorie blijft bij een ongewijzigd pad behouden. Verwijderen in Leeslamp wist nooit het bronbestand; een volgende scan voegt het opnieuw toe.
+De scan toont eerst bestandsnamen en vult metadata en omslagen vervolgens één voor één aan. Ongewijzigde grootte en wijzigingsdatum slaan afgeronde metadata over.
+Na afsluiten tijdens een scan kun je Opnieuw scannen gebruiken om ontbrekende metadata alsnog te verwerken.
+Zonder File System Access API verschijnt Map importeren: dezelfde mapindeling, maar bestanden worden dan gekopieerd naar IndexedDB en niet gekoppeld.
+Bij deze terugval bevat webkitRelativePath ook de gekozen hoofdmap; die naam wordt overgeslagen bij het bepalen van categorieën.
+Voor browserautomatisering zijn `window.__leeslamp.linkFolder(handle)` en `window.__leeslamp.rescan()` beschikbaar, ook met een OPFS-directoryhandle.
