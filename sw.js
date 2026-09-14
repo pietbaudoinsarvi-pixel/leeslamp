@@ -1,17 +1,20 @@
-const VERSION = 'leeslamp-v3';
+importScripts('./version.js');
+const VERSION = 'leeslamp-' + self.LEESLAMP_VERSION;
 const VENDOR = [
     'view.js', 'epub.js', 'mobi.js', 'fb2.js', 'comic-book.js', 'fixed-layout.js',
     'paginator.js', 'progress.js', 'epubcfi.js', 'overlayer.js', 'search.js',
     'text-walker.js', 'footnotes.js', 'ui/tree.js', 'vendor/zip.js', 'vendor/fflate.js',
 ];
-const SHELL = ['./', './index.html', './app.js', './autocat.js', './sw.js', './manifest.json', './icon.svg',
+const SHELL = ['./', './index.html', './app.js', './autocat.js', './sw.js', './version.js', './manifest.json', './icon.svg',
     ...VENDOR.map(file => `./vendor/foliate-js/${file}`)];
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(VERSION);
         await cache.addAll(SHELL);
-        await self.skipWaiting();
     })());
+});
+self.addEventListener('message', e => {
+    if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {

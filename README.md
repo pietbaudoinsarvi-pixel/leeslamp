@@ -1,5 +1,8 @@
 # Leeslamp
 
+## Deployen
+Gebruik vanuit de repositoryroot `deploy.cmd` om te publiceren, zodat open apps de melding krijgen dat ze kunnen vernieuwen. Het script schrijft een versiestempel (korte Git-hash plus UTC-tijd, of alleen tijd zonder Git), commit `version.js` en deployt naar Vercel. Sla appwijzigingen vooraf op in Git. Met Vernieuwen wordt de leesvoortgang bewaard en de app herladen; Later verbergt de melding tot een volgende update of herlaadbeurt.
+
 ## Ontwerp
 Een stille leesconsole: minerale vlakken, haarlijnen en een smalle koperkleurige markering.
 De vaste zijrail en het omslagraster geven de bibliotheek de rust van een native leesapp.

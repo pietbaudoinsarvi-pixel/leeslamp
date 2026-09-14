@@ -4,6 +4,9 @@ import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from '
 
 const STRINGS = {
     nl: {
+        updateAvailable: 'Nieuwe versie beschikbaar',
+        refreshApp: 'Vernieuwen',
+        updateLater: 'Later',
         appTitle: 'Leeslamp · Je eigen leesruimte',
         description: 'Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.',
         library: 'Bibliotheek',
@@ -153,6 +156,9 @@ const STRINGS = {
         libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
     },
     en: {
+        updateAvailable: 'New version available',
+        refreshApp: 'Refresh',
+        updateLater: 'Later',
         appTitle: 'Leeslamp · Your reading space',
         description: 'A quiet home for your books. Read locally with Leeslamp.',
         library: 'Library',
@@ -459,6 +465,20 @@ const widthPx = () => ({ 1: 1100, 2: 900, 3: 760, 4: 640 })[prefs.width];
 const fontFamily = () => prefs.font === 'Boek' ? 'Georgia, serif'
     : `"${prefs.font}", ${['Lato', 'Lexend'].includes(prefs.font) ? 'sans-serif' : 'Georgia, serif'}`;
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Lato:ital,wght@0,400;0,700;1,400&family=Lexend:wght@400;600&display=swap');";
+// Publisher stylesheets often set text-align on paragraph classes, which beats the injected rule.
+// Set it per element with priority, but leave deliberately centred or right-aligned text alone.
+function applyJustify(doc) {
+    const value = prefs.justify ? 'justify' : 'start';
+    const view = doc.defaultView;
+    for (const el of doc.querySelectorAll('p, li, blockquote, dd')) {
+        if (el.dataset.leeslampAlign === undefined) {
+            el.style.removeProperty('text-align');
+            const computed = view.getComputedStyle(el).textAlign;
+            el.dataset.leeslampAlign = ['center', 'right', 'end', '-webkit-center', '-webkit-right'].includes(computed) ? 'keep' : 'set';
+        }
+        if (el.dataset.leeslampAlign === 'set') el.style.setProperty('text-align', value, 'important');
+    }
+}
 function bookCSS() {
     const t = THEMES[prefs.theme];
     return [
@@ -1380,6 +1400,7 @@ async function openFoliate(session, file) {
     listen(session, $('#r-body'), 'wheel', handleWheel, { passive: true });
     listen(session, view, 'load', ({ detail: { doc } }) => {
         if (view.isFixedLayout) styleFixedDocument(doc);
+        else applyJustify(doc);
         listen(session, doc, 'keydown', keydown);
         listen(session, doc, 'pointermove', showBars, { passive: true });
         listen(session, doc, 'wheel', handleWheel, { passive: true });
@@ -1716,6 +1737,7 @@ function applyPreferences(changed) {
         }
         if (!changed || !['flow', 'width'].includes(changed)) {
             if (renderer.setStyles) renderer.setStyles(bookCSS());
+            if (changed === 'justify' && !active.view.isFixedLayout) for (const { doc } of renderer.getContents()) applyJustify(doc);
             else for (const { doc } of renderer.getContents()) styleFixedDocument(doc);
         }
     }
@@ -1755,4 +1777,66 @@ try {
 }
 catch (error) { report(() => t('libraryFailed'), error); }
 window.__leeslamp = { linkFolder, rescan };
-navigator.serviceWorker?.register('./sw.js').catch(error => console.warn('Offline storage unavailable', error));
+async function registerServiceWorker() {
+    if (!navigator.serviceWorker) return;
+    const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+    const prompt = $('#update-prompt');
+    let refreshing = false;
+    let reloading = false;
+    let offeredWorker = null;
+    const showUpdate = worker => {
+        if (!navigator.serviceWorker.controller || !worker || worker === offeredWorker) return;
+        offeredWorker = worker;
+        prompt.hidden = false;
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', async () => {
+        if (!refreshing || reloading) return;
+        reloading = true;
+        const session = active;
+        if (session) await saveProgress(session, true);
+        location.reload();
+    });
+    $('#update-refresh').addEventListener('click', () => {
+        const worker = registration.waiting;
+        if (!worker || refreshing) return;
+        refreshing = true;
+        worker.postMessage({ type: 'SKIP_WAITING' });
+    });
+    $('#update-later').addEventListener('click', () => { prompt.hidden = true; });
+    const trackInstalling = () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        const installed = () => {
+            if (worker.state === 'installed') showUpdate(worker);
+        };
+        worker.addEventListener('statechange', installed);
+        installed();
+    };
+    registration.addEventListener('updatefound', trackInstalling);
+    trackInstalling();
+    showUpdate(registration.waiting);
+
+    const fiveMinutes = 5 * 60 * 1000;
+    let lastCheck = Date.now(); // Registration already checks for an update.
+    let checking = false;
+    let timer;
+    const checkForUpdate = async () => {
+        if (document.hidden || checking || Date.now() - lastCheck < fiveMinutes) return;
+        lastCheck = Date.now();
+        checking = true;
+        try { await registration.update(); }
+        catch (error) { console.warn('Update check unavailable', error); }
+        finally { checking = false; }
+    };
+    const schedule = () => {
+        clearInterval(timer);
+        if (!document.hidden) timer = setInterval(checkForUpdate, 30 * 60 * 1000);
+    };
+    document.addEventListener('visibilitychange', () => {
+        schedule();
+        if (!document.hidden) void checkForUpdate();
+    });
+    window.addEventListener('focus', checkForUpdate);
+    schedule();
+}
+registerServiceWorker().catch(error => console.warn('Offline storage unavailable', error));

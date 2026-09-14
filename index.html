@@ -266,6 +266,12 @@
     }
     @media (hover:none) { .delete { opacity:1; } }
     @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+    #update-prompt { position:fixed; z-index:21; bottom:24px; left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px 16px; padding:12px 16px; border:1px solid var(--line); border-radius:0; background:var(--card); color:var(--fg); box-shadow:var(--shadow); animation:update-in 150ms var(--ease); }
+    #reader:not([hidden]) ~ #update-prompt { bottom:56px; }
+    #update-prompt button { border-radius:0; }
+    #update-refresh { background:var(--fg); color:var(--card); }
+    #update-refresh:hover { opacity:.85; }
+    @keyframes update-in { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }
   </style>
 </head>
 <body>
@@ -354,6 +360,11 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
     </aside>
   </section>
   <div id="toast" role="status" aria-live="polite" hidden></div>
+  <div id="update-prompt" role="status" hidden>
+    <span data-i18n="updateAvailable">Nieuwe versie beschikbaar</span>
+    <button id="update-refresh" type="button" data-i18n="refreshApp">Vernieuwen</button>
+    <button id="update-later" type="button" data-i18n="updateLater">Later</button>
+  </div>
   <noscript data-i18n="noScript">Schakel JavaScript in om je boeken te lezen. / Enable JavaScript to read your books.</noscript>
   <script type="module" src="./app.js"></script>
 </body>
