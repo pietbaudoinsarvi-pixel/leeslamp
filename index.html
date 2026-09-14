@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f5f1">
+  <meta name="description" content="Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.">
+  <title>Leeslamp</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400;1,700&family=Lato:ital,wght@0,400;0,700;1,400&family=Lexend:wght@400;600&display=swap" rel="stylesheet">
+  <!-- Modern browsers implement adoptedStyleSheets natively; no polyfill dependency. -->
+  <script type="importmap">{"imports":{"construct-style-sheets-polyfill":"data:text/javascript,export%20%7B%7D"}}</script>
+  <style>
+    :root { --bg:#f6f5f1; --side:#eeece7; --fg:#1d1c19; --mute:#7a776f; --line:rgba(0,0,0,.08); --hover:rgba(0,0,0,.05); --accent:#c8862f; --card:#ffffff; color-scheme:light; }
+    @media (prefers-color-scheme:dark) {
+      :root:not([data-mode="light"]) { --bg:#151412; --side:#1c1b18; --fg:#e9e6df; --mute:#8d8a82; --line:rgba(255,255,255,.08); --hover:rgba(255,255,255,.06); --accent:#e0a04a; --card:#23221e; color-scheme:dark; }
+    }
+    :root[data-mode="dark"] { --bg:#151412; --side:#1c1b18; --fg:#e9e6df; --mute:#8d8a82; --line:rgba(255,255,255,.08); --hover:rgba(255,255,255,.06); --accent:#e0a04a; --card:#23221e; color-scheme:dark; }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { background:var(--bg); color:var(--fg); margin:0; height:100vh; overflow:hidden; font:14px -apple-system,"Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
+    button,input,select { font:inherit; color:inherit; }
+    button { cursor:pointer; border:0; background:none; border-radius:6px; padding:8px 12px; }
+    button:hover { background:var(--hover); }
+    button:disabled { opacity:.35; cursor:default; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    #library { display:flex; height:100%; }
+    #library.dragging { outline:3px dashed var(--accent); outline-offset:-8px; }
+    #sidebar { width:220px; flex-shrink:0; background:var(--side); padding:28px 16px 18px; display:flex; flex-direction:column; border-right:1px solid var(--line); }
+    .brand { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; padding:0 10px 34px; }
+    .brand svg { width:27px; height:27px; }
+    #filters { overflow:auto; flex:1; }
+    #filters button { width:100%; display:flex; justify-content:space-between; text-align:left; margin-bottom:3px; }
+    #filters button[aria-current] { background:var(--hover); }
+    #filters .count,.section-label { color:var(--mute); font-size:12px; }
+    .section-label { padding:25px 12px 8px; }
+    .sidebar-bottom { padding-top:24px; display:flex; gap:8px; flex-wrap:wrap; }
+    .import { border:1px solid color-mix(in srgb,var(--accent) 55%,transparent); background:color-mix(in srgb,var(--accent) 8%,transparent); }
+    .sidebar-bottom .import { width:100%; }
+    #mode { margin-left:auto; }
+    main { flex:1; min-width:0; overflow:auto; }
+    .library-header { display:flex; align-items:center; gap:16px; padding:29px 32px 26px; flex-wrap:wrap; }
+    h1 { font-size:20px; font-weight:600; margin:0 auto 0 0; }
+    #search,select { border:1px solid var(--line); background:var(--card); padding:8px 10px; border-radius:6px; }
+    #search { width:200px; }
+    #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:28px 22px; padding:8px 32px 48px; }
+    .card { min-width:0; position:relative; }
+    .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:4px; }
+    .book-open:hover { background:none; }
+    .cover { aspect-ratio:2/3; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,.18),0 6px 16px rgba(0,0,0,.12); overflow:hidden; transition:transform 120ms; display:flex; align-items:center; justify-content:center; }
+    .card:hover .cover { transform:translateY(-2px); }
+    .cover img { width:100%; height:100%; object-fit:cover; }
+    .placeholder { font:15px Lora,Georgia,serif; text-align:center; padding:20px; color:#fffaf0; overflow-wrap:anywhere; }
+    .book-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:13px; font-weight:500; margin-top:12px; }
+    .book-author { display:block; color:var(--mute); font-size:12px; margin-top:4px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .progress-track { display:block; height:2px; background:var(--line); margin-top:5px; }
+    .progress-track span { display:block; height:100%; background:var(--accent); }
+    .delete { position:absolute; right:5px; top:5px; padding:0; width:26px; height:26px; background:var(--card); box-shadow:0 1px 4px #0003; opacity:0; font-size:20px; transition:opacity 120ms; }
+    .card:hover .delete,.card:focus-within .delete { opacity:1; }
+    #empty,#no-results { text-align:center; color:var(--mute); padding:22vh 24px 24px; }
+    #empty h2 { font:22px Lora,Georgia,serif; color:var(--fg); margin:0 0 16px; }
+    #empty p { line-height:1.8; margin-bottom:24px; }
+    #reader { position:fixed; inset:0; background:var(--rbg); color:var(--rfg); --rbg:#fff; --rfg:#1a1a1a; --rlink:#2a6db0; }
+    #r-body { position:absolute; inset:0; }
+    foliate-view { display:block; height:100%; }
+    foliate-view.fixed-layout { padding:56px 0; }
+    .reader-bar { position:absolute; left:0; right:0; height:44px; display:flex; align-items:center; gap:12px; padding:0 16px; z-index:3; background:color-mix(in srgb,var(--rbg) 92%,transparent); backdrop-filter:blur(8px); color:color-mix(in srgb,var(--rfg) 70%,transparent); transition:opacity 150ms; }
+    #top-bar { top:0; border-bottom:1px solid color-mix(in srgb,var(--rfg) 10%,transparent); }
+    #bottom-bar { bottom:0; border-top:1px solid color-mix(in srgb,var(--rfg) 10%,transparent); }
+    #reader button:hover { background:color-mix(in srgb,var(--rfg) 8%,transparent); }
+    #reader.bars-hidden .reader-bar { opacity:0; pointer-events:none; }
+    #r-title { flex:1; min-width:0; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13px; }
+    #aa { font:18px Georgia,serif; }
+    #slider { flex:1; min-width:30px; accent-color:var(--accent); height:16px; }
+    #progress-label { font-size:12px; max-width:32%; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; min-width:40px; text-align:right; }
+    #pdf,#text { position:absolute; inset:0; overflow:auto; padding:56px 0; overscroll-behavior:contain; outline-offset:-3px; overflow-anchor:none; }
+    .page { position:relative; width:min(calc(100% - 48px),var(--read-width)); margin:0 auto 16px; background:white; box-shadow:0 1px 2px #0003,0 6px 16px #0002; content-visibility:auto; }
+    .page canvas { display:block; position:absolute; inset:0; width:100%; height:100%; }
+    #reader[data-dark="true"] .page { background:var(--rbg); }
+    #reader[data-dark="true"] .page canvas { filter:invert(.88) hue-rotate(180deg); }
+    #text article { box-sizing:border-box; max-width:var(--read-width); margin:0 auto; padding:0 32px; overflow-wrap:anywhere; }
+    #text article a { color:var(--rlink); }
+    #text article img,#text article svg { max-width:100%; height:auto; }
+    #text article pre { white-space:pre-wrap; }
+    #text article table { max-width:100%; display:block; overflow:auto; }
+    #text article p,#text article li { hyphens:auto; }
+    .popover { position:absolute; z-index:5; background:var(--rbg); color:var(--rfg); border:1px solid color-mix(in srgb,var(--rfg) 15%,transparent); border-radius:10px; box-shadow:0 12px 40px #0003; }
+    #prefs { top:50px; right:16px; width:300px; padding:18px; max-height:calc(100% - 100px); overflow:auto; }
+    .pref-label { display:block; font-size:12px; opacity:.7; margin:0 0 10px; }
+    .pref-group { margin-bottom:18px; }
+    #themes { display:flex; justify-content:space-between; padding:2px; }
+    #themes button { width:28px; height:28px; border-radius:50%; border:1px solid color-mix(in srgb,var(--rfg) 20%,transparent); padding:0; }
+    #themes button[aria-pressed="true"] { outline:2px solid var(--accent); outline-offset:3px; }
+    .segments { display:flex; flex-wrap:wrap; gap:3px; }
+    .segments button { padding:7px 9px; font-size:13px; }
+    .segments button[aria-pressed="true"] { background:color-mix(in srgb,var(--rfg) 12%,transparent); }
+    .stepper { display:flex; align-items:center; margin:8px 0; }
+    .stepper > span { flex:1; }
+    .stepper output { width:38px; text-align:center; font-variant-numeric:tabular-nums; }
+    .stepper button { font-size:18px; }
+    #flow-row { margin-top:16px; }
+    #justify-row { display:flex; align-items:center; justify-content:space-between; margin-top:16px; }
+    #justify { accent-color:var(--accent); }
+    #toc { top:50px; left:16px; bottom:56px; width:min(340px,calc(100% - 32px)); padding:16px 10px; overflow:auto; }
+    #toc h2 { font-size:15px; margin:0 12px 12px; }
+    #toc-list ol { list-style:none; padding-left:12px; margin:0; }
+    #toc-list a,#toc-list span { display:block; padding:6px 8px; border-radius:6px; color:var(--rfg); opacity:.8; text-decoration:none; }
+    #toc-list a[aria-current] { background:color-mix(in srgb,var(--rfg) 10%,transparent); opacity:1; }
+    #toc-list svg { fill:currentColor; margin-left:-20px; margin-right:7px; }
+    #toc-list [aria-expanded="false"] + ol { display:none; }
+    #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
+    #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); max-width:calc(100% - 32px); background:var(--fg); color:var(--bg); padding:12px 20px; border-radius:8px; box-shadow:0 4px 20px #0002; white-space:pre-line; }
+    #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rfg); font-family:Lora,Georgia,serif; }
+    @media (max-width:700px) {
+      #sidebar { width:160px; padding:24px 8px 12px; }
+      .brand { padding-left:4px; gap:6px; }
+      .library-header { padding:24px 18px; gap:10px; }
+      #search { width:100%; order:3; }
+      #grid { padding:8px 18px 32px; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:24px 16px; }
+      .reader-bar { padding:0 6px; gap:3px; }
+      #progress-label { max-width:28%; }
+    }
+    @media (hover:none) { .delete { opacity:1; } }
+    @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+  </style>
+</head>
+<body>
+  <div id="library">
+    <aside id="sidebar" aria-label="Bibliotheek">
+      <div class="brand"><svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#1d1b18"/><path d="M17 11h14l7 17H10z" fill="#e0a04a"/><path d="M24 28v10m-8 0h16" stroke="#e0a04a" stroke-width="3" stroke-linecap="round"/></svg>Leeslamp</div>
+      <nav id="filters" aria-label="Boekenfilter"></nav>
+      <div class="sidebar-bottom"><button class="import" id="import-button">Importeren</button><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem">◐</button></div>
+    </aside>
+    <main>
+      <header class="library-header"><h1 id="filter-title">Alle boeken</h1><input id="search" type="search" placeholder="Zoeken" aria-label="Zoeken op titel of auteur"><select id="sort" aria-label="Sorteren"><option value="opened">Laatst gelezen</option><option value="title">Titel</option><option value="author">Auteur</option><option value="added">Toegevoegd</option></select></header>
+      <div id="grid"></div>
+      <div id="empty" hidden><h2>Sleep je boeken hierheen</h2><p>EPUB · MOBI · AZW3 · FB2 · CBZ · PDF · TXT · MD · HTML · DOCX</p><button class="import" id="empty-import">Importeren</button></div>
+      <p id="no-results" hidden>Geen boeken</p>
+    </main>
+  </div>
+  <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx">
+  <section id="reader" hidden aria-label="Boeklezer">
+    <div id="r-body"></div>
+    <div id="top-bar" class="reader-bar"><button id="back">‹ Bibliotheek</button><div id="r-title"></div><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false">☷</button><button id="aa" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false">Aa</button></div>
+    <div id="bottom-bar" class="reader-bar"><button id="prev" aria-label="Vorige pagina">‹</button><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks"><datalist id="ticks"></datalist><button id="next" aria-label="Volgende pagina">›</button><span id="progress-label">0%</span></div>
+    <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave"><h2>Inhoudsopgave</h2><div id="toc-list"></div></aside>
+    <aside id="prefs" class="popover" hidden aria-label="Leesvoorkeuren">
+      <div class="pref-group"><span class="pref-label">Thema</span><div id="themes"></div></div>
+      <div class="pref-group"><span class="pref-label">Lettertype</span><div id="fonts" class="segments"></div></div>
+      <div class="stepper"><span>Grootte</span><button data-step="size:-1" aria-label="Kleinere letters">−</button><output id="size-value">18</output><button data-step="size:1" aria-label="Grotere letters">+</button></div>
+      <div class="stepper"><span>Regelafstand</span><button data-step="lh:-0.1" aria-label="Kleinere regelafstand">−</button><output id="lh-value">1.5</output><button data-step="lh:0.1" aria-label="Grotere regelafstand">+</button></div>
+      <div class="stepper"><span>Breedte</span><button data-step="width:-1" aria-label="Bredere tekst">−</button><output id="width-value">2</output><button data-step="width:1" aria-label="Smallere tekst">+</button></div>
+      <div id="flow-row"><span class="pref-label">Weergave</span><div id="flows" class="segments"><button data-flow="paginated">Pagina</button><button data-flow="scrolled">Scrollen</button></div></div>
+      <label id="justify-row">Uitvullen<input id="justify" type="checkbox" checked></label>
+    </aside>
+  </section>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <noscript>Schakel JavaScript in om je boeken te lezen.</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
