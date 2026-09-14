@@ -22,7 +22,9 @@ function candidates(meta = {}) {
     return [meta.subject, meta.subjects, meta.tags, meta.genre, meta.genres,
         meta.info?.Keywords, meta.info?.Subject, ...custom].flatMap(values);
 }
-const usable = value => value && !/^(unknown|onbekend|none|n\/a|general|algemeen|unspecified|other|overig)$/i.test(value);
+// Reject placeholders, BISAC/THEMA codes (FIC000000, JNF), tool tags (calibre:series), and values without letters or over 40 chars.
+const usable = value => value && value.length <= 40 && /\p{L}/u.test(value) && !value.includes(':')
+    && !/^[A-Z]{3}\d{6}$/i.test(value) && !/^(unknown|onbekend|none|n\/a|general|algemeen|unspecified|other|overig)$/i.test(value);
 export const collectSubjects = (meta, split = true) => [...new Set(candidates(meta).filter(value => usable(normalizeCategory(value)))
     .flatMap(value => split ? value.split(/[;/,]/) : [value]).map(normalizeCategory).filter(usable))];
 const groups = [
@@ -52,7 +54,11 @@ export function autoCategory(meta, existingCategories = []) {
     for (const subject of subjects) {
         for (const group of groups) {
             if (!group.pattern.test(keywordText(subject))) continue;
-            const match = existing.find(category => group.keywords.some(word => keywordText(category).toLocaleLowerCase('nl').includes(word)));
+            const lower = category => keywordText(category).toLocaleLowerCase('nl');
+            // Prefer the category that contains the keyword that actually matched (Sales → "Sales & overtuigen", not "Marketing & branding").
+            const hit = group.keywords.find(word => new RegExp(`(?:^|[^\p{L}])${word}(?=$|[^\p{L}])`, 'iu').test(keywordText(subject)));
+            const match = (hit && existing.find(category => lower(category).includes(hit)))
+                || existing.find(category => group.keywords.some(word => lower(category).includes(word)));
             if (match) return match;
         }
     }
