@@ -1,5 +1,6 @@
 import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
+import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
 
 const STRINGS = {
     nl: {
@@ -11,6 +12,11 @@ const STRINGS = {
         categories: 'Categorieën',
         format: 'Formaat',
         import: 'Importeren',
+        automatic: 'Automatisch',
+        findBooks: 'Boeken zoeken',
+        findBooksHint: "Kies in de kiezer 'Alles selecteren' om je hele map toe te voegen.",
+        newCategoriesOne: '{count} nieuwe categorie',
+        newCategoriesOther: '{count} nieuwe categorieën',
         linkFolder: 'Map koppelen',
         importFolder: 'Map importeren',
         rescan: 'Opnieuw scannen',
@@ -88,7 +94,7 @@ const STRINGS = {
         unread: 'Ongelezen',
         bookCountOne: '{count} boek',
         bookCountOther: '{count} boeken',
-        countOf: '{count} van {total}',
+        countOf: '{count} van {total} boeken',
         confirmHide: '"{title}" verbergen? Het bestand blijft in de map staan.',
         confirmDelete: '"{title}" verwijderen?',
         importProgress: 'Importeren… {current}/{total}',
@@ -146,6 +152,11 @@ const STRINGS = {
         categories: 'Categories',
         format: 'Format',
         import: 'Import',
+        automatic: 'Automatic',
+        findBooks: 'Find books',
+        findBooksHint: "Choose 'Select all' in the picker to add your whole folder.",
+        newCategoriesOne: '{count} new category',
+        newCategoriesOther: '{count} new categories',
         linkFolder: 'Link folder',
         importFolder: 'Import folder',
         rescan: 'Rescan',
@@ -223,7 +234,7 @@ const STRINGS = {
         unread: 'Unread',
         bookCountOne: '{count} book',
         bookCountOther: '{count} books',
-        countOf: '{count} of {total}',
+        countOf: '{count} of {total} books',
         confirmHide: 'Hide "{title}"? The file will stay in its folder.',
         confirmDelete: 'Delete "{title}"?',
         importProgress: 'Importing… {current}/{total}',
@@ -251,7 +262,7 @@ const STRINGS = {
         storageFailed: 'Storage failed',
         prefsFailed: 'Could not save your preferences.',
         categoryFailed: 'Could not save the category.',
-        deleteFailed: 'Could not remove the book.',
+        deleteFailed: 'Could not delete the book.',
         downloadFailed: 'Download failed',
         coverFailed: 'Could not create the cover',
         importBusy: 'Books are already being imported. Try again shortly.',
@@ -342,7 +353,7 @@ const readSetting = (key, fallback) => {
 let lang = resolveLanguage();
 function resolveLanguage() {
     if (location.pathname === '/en') return 'en';
-    const stored = location.pathname === '/' ? readSetting('leeslamp.lang', '') : '';
+    const stored = location.pathname === '/en' ? '' : readSetting('leeslamp.lang', '');
     return ['nl', 'en'].includes(stored) ? stored : navigator.language.toLowerCase().startsWith('nl') ? 'nl' : 'en';
 }
 function t(key, params = {}) {
@@ -574,7 +585,7 @@ function renderLibrary() {
     $('#grid').replaceChildren(fragment);
     // Detach every old image before revoking URLs it could still request lazily.
     for (const url of retiredURLs) URL.revokeObjectURL(url);
-    $('#library-count').textContent = visible.length === allBooks.length ? t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }) : t('countOf', { count: t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }), total: allBooks.length });
+    $('#library-count').textContent = visible.length === allBooks.length ? t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }) : t('countOf', { count: visible.length, total: allBooks.length });
     $('#empty').hidden = allBooks.length !== 0;
     $('#no-results').hidden = !allBooks.length || visible.length !== 0;
 }
@@ -605,8 +616,8 @@ $('#grid').addEventListener('click', async e => {
         const category = await chooseCategory(record.category, true);
         if (category === null) return;
         try {
-            await put('books', { ...record, category });
-            record.category = category; renderLibrary();
+            await put('books', { ...record, category, categoryManual: true });
+            record.category = category; record.categoryManual = true; renderLibrary();
         } catch (error) { report(() => t('categoryFailed'), error); }
         return;
     }
@@ -692,7 +703,8 @@ async function importMetadata(file, kind) {
             let cover = null;
             try { cover = await downscaleCover(await book.getCover?.()); }
             catch (error) { console.warn('Cover skipped', error); }
-            return { title: languageMap(book.metadata?.title), author: formatContributor(book.metadata?.author), cover };
+            return { title: languageMap(book.metadata?.title), author: formatContributor(book.metadata?.author),
+                subjects: collectSubjects(book.metadata, false), cover };
         } finally { book.destroy?.(); }
     }
     if (kind === 'pdf') {
@@ -712,11 +724,13 @@ async function importMetadata(file, kind) {
                 cover = await downscaleCover(await canvasBlob(canvas));
                 canvas.width = canvas.height = 0;
             } catch (error) { console.warn('PDF cover skipped', error); }
-            return { title: typeof info.Title === 'string' ? info.Title : '', author: typeof info.Author === 'string' ? info.Author : '', cover };
+            return { title: typeof info.Title === 'string' ? info.Title : '', author: typeof info.Author === 'string' ? info.Author : '',
+                subjects: collectSubjects({ info }, false), cover };
         } finally { await task.destroy(); }
     }
-    return { title: '', author: '', cover: null };
+    return { title: '', author: '', subjects: [], cover: null };
 }
+const AUTO_CATEGORY = Symbol('auto');
 function chooseCategory(current = '', change = false) {
     const dialog = $('#category-dialog'), select = $('#category-select'), input = $('#new-category');
     if (dialog.open) return Promise.resolve(null);
@@ -726,13 +740,14 @@ function chooseCategory(current = '', change = false) {
         if (!value) localize(option, 'noCategory');
         option.value = String(index); return option;
     }), Object.assign(localize(el('option'), 'addCategory'), { value: 'new' }));
-    select.value = String(Math.max(0, values.indexOf(current)));
+    if (!change) select.prepend(Object.assign(localize(el('option'), 'automatic'), { value: 'auto' }));
+    select.value = change ? String(Math.max(0, values.indexOf(current))) : 'auto';
     input.value = ''; input.required = false; $('#new-category-field').hidden = true;
     localize($('#category-submit'), change ? 'save' : 'import');
     dialog.returnValue = '';
     return new Promise(resolve => {
         dialog.addEventListener('close', () => resolve(dialog.returnValue === 'save'
-            ? select.value === 'new' ? input.value.trim() : values[Number(select.value)] : null), { once: true });
+            ? select.value === 'auto' ? AUTO_CATEGORY : select.value === 'new' ? input.value.trim() : values[Number(select.value)] : null), { once: true });
         dialog.showModal();
     });
 }
@@ -751,11 +766,64 @@ $('#category-form').addEventListener('submit', e => {
 const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
 function setImporting(value) {
     importing = value;
-    for (const selector of ['#import-button', '#empty-import', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
+    for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
     for (const button of $('#grid').querySelectorAll('.delete')) button.disabled = value;
     $('#rescan').hidden = !roots.some(root => root.linked);
 }
 const filenameTitle = name => name.replace(/\.[^.]+$/, '');
+const canAutoCategory = record => record.category === '' && record.autoCategorized !== true && !record.categoryManual && !record.hidden;
+let categorizeAvailable;
+async function categoryRequest(body) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 22000);
+    try {
+        const response = await fetch('/api/categorize', { method: body ? 'POST' : 'HEAD', cache: 'no-store',
+            signal: controller.signal, ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
+        return body ? response.ok ? await response.json() : null : response.status === 200;
+    } finally { clearTimeout(timer); }
+}
+function categoryPipeline() {
+    const known = categories().filter(Boolean), created = new Set(), pending = [];
+    const remember = category => {
+        if (category && !known.some(value => sameCategory(value, category))) { known.push(category); created.add(category); }
+    };
+    const assign = (record, category) => {
+        if (!category || !canAutoCategory(record)) return;
+        record.category = known.find(value => sameCategory(value, category)) ?? category;
+        record.autoCategorized = true; remember(record.category);
+    };
+    const flush = async () => {
+        const batch = pending.splice(0);
+        if (!batch.length) return;
+        let result;
+        try {
+            categorizeAvailable ??= categoryRequest().catch(() => false);
+            if (!await categorizeAvailable) return;
+            const response = await categoryRequest({ books: batch.map(record => ({
+                title: record.title.slice(0, 200), author: record.author.slice(0, 200),
+                subjects: collectSubjects(record).slice(0, 100), categories: known.filter(x => x.length <= 200).slice(0, 100),
+            })) });
+            result = response?.categories;
+            if (!Array.isArray(result) || result.length !== batch.length || result.some(x => typeof x !== 'string' || x.length > 200)) return;
+        } catch { return; } // Optional network work never raises a toast.
+        const assigned = [];
+        batch.forEach((record, index) => {
+            if (!canAutoCategory(record)) return;
+            assign(record, normalizeCategory(result[index]));
+            if (record.autoCategorized) assigned.push(record);
+        });
+        if (assigned.length) await writeBookBatch(assigned);
+    };
+    return { created, remember, flush,
+        local(record) { if (canAutoCategory(record)) assign(record, autoCategory(record, known)); },
+        async enqueue(record) {
+            if (canAutoCategory(record)) pending.push(record);
+            if (pending.length === 20) { await yieldUI(); await flush(); }
+        },
+    };
+}
+const categorySummary = pipeline => pipeline.created.size
+    ? ` · ${t(pipeline.created.size === 1 ? 'newCategoriesOne' : 'newCategoriesOther', { count: pipeline.created.size })}` : '';
 function newRecord(file, category, source, id = crypto.randomUUID()) {
     const ext = file.name.split('.').pop().toLowerCase();
     return { id, name: file.name, ext, kind: kindFor(ext), category, source,
@@ -773,27 +841,35 @@ async function importFiles(files, categoryForFile) {
     }
     let count = 0;
     const failures = [];
+    const pipeline = categoryPipeline();
     let lastRender = performance.now();
     for (const [index, file] of [...files].entries()) {
         toast(() => t('importProgress', { current: index + 1, total: files.length }), 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
         if (!kind) { failures.push(() => t('unsupportedFile', { name: file.name })); continue; }
         try {
-            const record = newRecord(file, categoryForFile(file), { kind: 'blob' });
+            const category = categoryForFile(file);
+            const record = newRecord(file, category === AUTO_CATEGORY ? '' : category, { kind: 'blob' });
+            record.categoryManual = category !== AUTO_CATEGORY;
             try {
                 const meta = await importMetadata(file, kind);
                 Object.assign(record, meta, { title: meta.title.trim() || record.title, metadataReady: true });
             } catch (error) { console.warn(file.name, error); failures.push(() => t('metadataSkipped', { name: file.name })); }
+            pipeline.local(record);
             await bookTransaction(record, file);
             books.push(record);
             count++;
+            pipeline.remember(record.category);
+            await pipeline.enqueue(record);
         } catch (error) { console.error(error); failures.push(() => t('importFailedFile', { name: file.name })); }
         if (performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
         await yieldUI();
     }
+    try { await pipeline.flush(); }
+    catch (error) { report(() => t('categoryFailed'), error); }
     setImporting(false);
     renderLibrary();
-    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
 
 // File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
@@ -866,17 +942,23 @@ async function scanRoots(selected) {
     }
     refresh(true);
     let batch = [], completed = 0;
-    for (const { handle, record } of work) {
+    const pipeline = categoryPipeline();
+    for (const { handle, record, category: folderCategory } of work) {
         toast(() => t('scanProgress', { current: completed, total: found }), 0);
         try {
             const file = await handle.getFile();
-            if (!record.metadataReady || record.size !== file.size || record.lastModified !== file.lastModified) {
+            if (!record.metadataReady || record.size !== file.size || record.lastModified !== file.lastModified
+                || (!folderCategory && canAutoCategory(record) && !Array.isArray(record.subjects))) {
                 // Failed work stays pending; an interrupted write retains the old size/mtime or pending record.
                 record.metadataReady = false;
                 record.size = file.size; record.lastModified = file.lastModified;
                 const meta = await importMetadata(file, record.kind);
                 Object.assign(record, meta, { title: meta.title.trim() || filenameTitle(record.name), metadataReady: true });
                 batch.push(record);
+            }
+            if (!folderCategory && canAutoCategory(record)) {
+                pipeline.local(record);
+                if (record.autoCategorized) batch.push(record);
             }
         } catch (error) {
             console.warn(record.name, error); failures.push(() => t('metadataMissing', { name: record.name }));
@@ -887,11 +969,13 @@ async function scanRoots(selected) {
             if (batch.length) await writeBookBatch(batch);
             batch = [];
         }
+        if (!folderCategory) await pipeline.enqueue(record);
         toast(() => t('scanProgress', { current: completed, total: found }), 0);
         refresh(); await yieldUI();
     }
+    await pipeline.flush();
     refresh(true);
-    toast(() => [t('scanResult', { found, added }), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    toast(() => [t('scanResult', { found, added }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
     return { found, added, failures: failures.map(message => message()) };
 }
 async function linkFolder(handle) {
@@ -926,8 +1010,15 @@ async function rescan() {
         return result;
     } finally { setImporting(false); }
 }
-$('#link-folder').hidden = typeof window.showDirectoryPicker !== 'function';
-$('#folder-import').hidden = !$('#link-folder').hidden;
+const mobileImport = matchMedia('(max-width: 760px)');
+function updateImportControls() {
+    const hasDirectoryPicker = typeof window.showDirectoryPicker === 'function';
+    $('#find-books').hidden = !mobileImport.matches && hasDirectoryPicker;
+    $('#link-folder').hidden = mobileImport.matches || !hasDirectoryPicker;
+    $('#folder-import').hidden = mobileImport.matches || hasDirectoryPicker || !('webkitdirectory' in $('#folder-input'));
+}
+mobileImport.addEventListener('change', updateImportControls);
+updateImportControls();
 $('#link-folder').addEventListener('click', async () => {
     try { await linkFolder(await window.showDirectoryPicker({ mode: 'read' })); }
     catch (error) { if (error.name !== 'AbortError') report(() => t('linkFailed'), error); }
@@ -938,11 +1029,19 @@ $('#folder-input').addEventListener('change', e => {
     const files = [...e.target.files].filter(file => kindFor(file.name.split('.').pop().toLowerCase())); e.target.value = '';
     // webkitRelativePath includes the selected root name; categories start just below that root.
     void importFiles(files, file => {
-        const parts = file.webkitRelativePath.split('/'); return parts.length > 2 ? parts[1] : '';
+        const parts = file.webkitRelativePath.split('/'); return parts.length > 2 ? parts[1] : AUTO_CATEGORY;
     });
 });
-for (const id of ['#import-button', '#empty-import']) $(id).addEventListener('click', () => $('#file-input').click());
-$('#file-input').addEventListener('change', e => { const files = [...e.target.files]; e.target.value = ''; void importFiles(files); });
+let findBooksImport = false;
+for (const id of ['#import-button', '#empty-import', '#find-books']) $(id).addEventListener('click', () => {
+    findBooksImport = id === '#find-books'; $('#file-input').click();
+});
+$('#file-input').addEventListener('cancel', () => { findBooksImport = false; });
+$('#file-input').addEventListener('change', e => {
+    const files = [...e.target.files], automatic = findBooksImport;
+    e.target.value = ''; findBooksImport = false;
+    void importFiles(files, automatic ? () => AUTO_CATEGORY : undefined);
+});
 let dragDepth = 0;
 $('#library').addEventListener('dragenter', e => {
     if (!e.dataTransfer.types.includes('Files')) return;

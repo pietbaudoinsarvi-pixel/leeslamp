@@ -126,6 +126,7 @@
     #category-dialog select,#category-dialog input { width:100%; margin:8px 0 20px; padding:8px; background:var(--card); border:1px solid var(--line); border-radius:2px; }
     .dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
     .folder-button { text-align:left; border:1px solid var(--line); font-size:12px; }
+    .find-books-hint { display:none; margin:0; color:var(--mute); font-size:11px; }
     .card:hover .delete,.card:focus-within .delete { opacity:1; }
     #empty,#no-results { text-align:center; color:var(--mute); padding:clamp(48px,12vh,140px) 0 32px; max-width:520px; margin:auto; }
     .empty-mark { width:120px; height:132px; color:var(--accent); margin-bottom:28px; }
@@ -224,7 +225,7 @@
     @keyframes toast-in { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }
     @media (min-width:1800px) { #grid { grid-template-columns:repeat(auto-fill,minmax(176px,1fr)); gap:44px 36px; } }
     @media (max-width:1100px) { #sidebar { width:192px; } .library-tools { width:100%; } .search-field { flex:1; } #search { width:100%; } #grid { gap:28px 20px; } }
-    @media (max-width:650px) {
+    @media (max-width:760px) {
       #library { flex-direction:column; }
       #sidebar { width:100%; padding:16px 20px 0; display:grid; grid-template-columns:1fr auto; border-right:0; border-bottom:1px solid var(--line); }
       .brand { padding:0; font-size:16px; gap:8px; }
@@ -232,6 +233,9 @@
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
       .sidebar-bottom { grid-column:1/-1; grid-row:2; flex-direction:row; flex-wrap:wrap; padding:12px 0 0; margin:0; border:0; gap:8px; }
       .sidebar-bottom .import { width:auto; padding:8px 10px; gap:8px; font-size:11px; }
+      .find-books-hint { display:block; flex-basis:100%; order:1; }
+      main { min-height:0; }
+      #sidebar,#filters { min-width:0; }
       .device-note { padding:0; }
       #filters { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:16px 0 10px; overflow-x:auto; }
       #filters button { flex-shrink:0; width:auto; font-size:11px; padding:6px 10px; margin:0; min-height:32px; }
@@ -242,7 +246,7 @@
       .heading .eyebrow { margin-bottom:8px; }
       .heading h1 { font-size:30px; }
       .library-tools { gap:12px; }
-      #grid { grid-template-columns:repeat(auto-fill,minmax(136px,1fr)); gap:28px 20px; }
+      #grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px 20px; }
       .library-meta { margin:16px 0 24px; }
       .placeholder { padding:16px 14px 16px 22px; }
       .placeholder-title { font-size:18px; }
@@ -283,6 +287,8 @@
       <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters"></nav>
       <div class="sidebar-bottom">
         <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button class="folder-button" id="find-books" hidden data-i18n="findBooks" aria-describedby="find-books-hint">Boeken zoeken</button>
+        <p class="find-books-hint" id="find-books-hint" data-i18n="findBooksHint">Kies in de kiezer 'Alles selecteren' om je hele map toe te voegen.</p>
         <button class="folder-button" id="link-folder" hidden data-i18n="linkFolder">Map koppelen</button>
         <button class="folder-button" id="folder-import" hidden data-i18n="importFolder">Map importeren</button>
         <button class="folder-button" id="rescan" hidden data-i18n="rescan">Opnieuw scannen</button>

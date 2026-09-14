@@ -1,1 +1,1 @@
-{ "trailingSlash": false, "rewrites": [ { "source": "/en", "destination": "/index.html" } ] }
+{ "trailingSlash": false, "functions": { "api/categorize.js": { "maxDuration": 25 } }, "rewrites": [ { "source": "/en", "destination": "/index.html" } ] }
