@@ -44,7 +44,6 @@ const STRINGS = {
         confirmClearRecent: 'Laatst gelezen leegmaken? Je leesvoortgang blijft bewaard.',
         recent: 'Laatst gelezen',
         categories: 'Categorieën',
-        format: 'Formaat',
         import: 'Importeren',
         automatic: 'Automatisch',
         findBooks: 'Boeken zoeken',
@@ -219,7 +218,6 @@ const STRINGS = {
         confirmClearRecent: 'Clear Recently read? Your reading progress will be preserved.',
         recent: 'Recently read',
         categories: 'Categories',
-        format: 'Format',
         import: 'Import',
         automatic: 'Automatic',
         findBooks: 'Find books',
@@ -380,6 +378,7 @@ function downloading(id, delta) {
     if (count) downloadingBooks.set(id, count); else downloadingBooks.delete(id);
     for (const card of $('#grid').children) if (card.dataset.id === id) {
         card.querySelector('.cloud-badge')?.classList.toggle('downloading', count > 0);
+        cardStates.delete(card);
     }
 }
 const database = () => dbPromise ??= new Promise((resolve, reject) => {
@@ -594,6 +593,9 @@ systemTheme.addEventListener('change', applyMode);
 let books = [], roots = [], filter = 'all', query = '', searchTimer, importing = false;
 const coverURLs = new Map();
 const coverBlobs = new Map();
+// Keep filtered-out cards detached so returning to All books also reuses images.
+const bookCards = new Map();
+const cardStates = new WeakMap();
 // Stagger only covers not yet presented this session; searching never replays the grid.
 const presentedBooks = new Set();
 const collator = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
@@ -603,11 +605,31 @@ let listedBooks = [];
 const categories = () => [...new Set(visibleBooks().map(book => book.category))].sort(collator.compare);
 const categoryFilter = () => filter.startsWith('category:');
 const filterName = () => categoryFilter() ? filter.slice(9) || t('noCategory')
-    : filter === 'all' ? t('allBooks') : filter === 'reading' ? t('currentlyReading') : filter === 'recent' ? t('recent') : filter.toUpperCase();
+    : filter === 'reading' ? t('currentlyReading') : filter === 'recent' ? t('recent') : t('allBooks');
+let filterSignature = '';
 function renderFilters() {
-    const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
     const visible = visibleBooks();
-    if (!['all', 'reading', 'recent'].includes(filter) && !visible.some(b => categoryFilter() ? b.category === filter.slice(9) : b.ext === filter)) filter = 'all';
+    const counts = new Map();
+    let reading = 0, recent = 0;
+    for (const book of visible) {
+        counts.set(book.category, (counts.get(book.category) || 0) + 1);
+        if (isCurrentlyReading(book)) reading++;
+        if (book.opened) recent++;
+    }
+    if (!['all', 'reading', 'recent'].includes(filter) && !(categoryFilter() && counts.has(filter.slice(9)))) filter = 'all';
+    const categoryCounts = [...counts].sort(([a], [b]) => collator.compare(a, b));
+    const signature = JSON.stringify([lang, visible.length, reading, recent, categoryCounts]);
+    if (signature === filterSignature) {
+        for (const button of $('#filter-list').querySelectorAll('button')) {
+            if (button.dataset.filter === filter) {
+                if (!button.hasAttribute('aria-current')) button.setAttribute('aria-current', 'page');
+            } else if (button.hasAttribute('aria-current')) button.removeAttribute('aria-current');
+        }
+        $('#filters-toggle-label').textContent = filterName();
+        return;
+    }
+    filterSignature = signature;
+    const focusedFilter = document.activeElement?.closest('#filters button')?.dataset.filter;
     const fragment = document.createDocumentFragment();
     const add = (value, label, count) => {
         const button = el('button', '', label);
@@ -617,13 +639,10 @@ function renderFilters() {
         fragment.append(button);
     };
     add('all', t('allBooks'), visible.length);
-    add('reading', t('currentlyReading'), visible.filter(isCurrentlyReading).length);
-    add('recent', t('recent'), visible.filter(b => b.opened).length);
+    add('reading', t('currentlyReading'), reading);
+    add('recent', t('recent'), recent);
     if (visible.length) fragment.append(el('div', 'section-label', t('categories')));
-    for (const category of categories()) add(`category:${category}`, category || t('noCategory'), visible.filter(b => b.category === category).length);
-    const extensions = [...new Set(visible.map(b => b.ext))].sort();
-    if (extensions.length) fragment.append(el('div', 'section-label', t('format')));
-    for (const ext of extensions) add(ext, ext.toUpperCase(), visible.filter(b => b.ext === ext).length);
+    for (const [category, count] of categoryCounts) add(`category:${category}`, category || t('noCategory'), count);
     $('#filter-list').replaceChildren(fragment);
     if (focusedFilter) [...$('#filter-list').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filters-toggle-label').textContent = filterName();
@@ -633,87 +652,47 @@ function renderLibrary() {
     const sort = filter === 'reading' ? 'opened' : $('#sort').value;
     $('#sort').hidden = filter === 'reading';
     const allBooks = visibleBooks();
-    const visible = allBooks.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'reading' ? isCurrentlyReading(b) : filter === 'recent' ? b.opened : b.ext === filter))
+    const visible = allBooks.filter(b => (filter === 'all' || (categoryFilter() ? b.category === filter.slice(9) : filter === 'reading' ? isCurrentlyReading(b) : filter === 'recent' && b.opened))
         && `${b.title} ${b.author}`.toLocaleLowerCase('nl').includes(query));
     visible.sort((a, b) => {
         if (sort === 'title' || sort === 'author') return collator.compare(a[sort], b[sort]) || collator.compare(a.title, b.title);
         return (sort === 'opened' ? (b.opened ?? 0) - (a.opened ?? 0) : 0) || b.added - a.added;
     });
-    const fragment = document.createDocumentFragment();
+    const grid = $('#grid');
+    const visibleIds = new Set(visible.map(book => book.id));
+    for (const card of [...grid.children]) if (!visibleIds.has(card.dataset.id)) {
+        card.remove();
+        card.classList.remove('arriving');
+    }
     const retiredURLs = [];
-    const currentCovers = new Map(visibleBooks().map(book => [book.id, book.cover]));
+    const currentCovers = new Map(allBooks.map(book => [book.id, book.cover]));
+    for (const id of bookCards.keys()) if (!currentCovers.has(id)) bookCards.delete(id);
     for (const [id, url] of coverURLs) {
         if (currentCovers.get(id) !== coverBlobs.get(id)) {
             retiredURLs.push(url); coverURLs.delete(id); coverBlobs.delete(id);
+            cardStates.delete(bookCards.get(id));
         }
     }
     let arrival = 0;
+    let next = grid.firstChild;
     for (const book of visible) {
-        const card = el('div', 'card');
-        card.dataset.id = book.id;
+        let card = bookCards.get(book.id);
+        if (!card) { card = createBookCard(); card.dataset.id = book.id; bookCards.set(book.id, card); }
+        updateBookCard(card, book);
         if (!presentedBooks.has(book.id)) {
             card.classList.add('arriving');
             card.style.setProperty('--delay', `${Math.min(arrival++, 8) * 40}ms`);
             presentedBooks.add(book.id);
         }
-        const open = el('button', 'book-open');
-        open.setAttribute('aria-label', t('openBook', { title: book.title }));
-        open.title = `${book.title}${book.author ? ` · ${book.author}` : ''}`;
-        const cover = el('span', 'cover');
-        if (book.cover) {
-            if (!coverURLs.has(book.id)) {
-                coverURLs.set(book.id, URL.createObjectURL(book.cover)); coverBlobs.set(book.id, book.cover);
-            }
-            const image = el('img');
-            image.src = coverURLs.get(book.id);
-            image.alt = '';
-            image.loading = 'lazy';
-            image.decoding = 'async';
-            cover.append(image);
-        } else {
-            let hash = 0;
-            for (const character of book.title) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-            cover.classList.add('no-cover');
-            cover.style.setProperty('--cover-color', `var(--cover-${Math.abs(hash) % 6})`);
-            const placeholder = el('span', 'placeholder');
-            placeholder.append(el('span', 'placeholder-format', book.ext.toUpperCase()),
-                el('span', 'placeholder-title', book.title), el('span', 'placeholder-author', book.author || 'Leeslamp'));
-            cover.append(placeholder);
+        if (card !== next) {
+            if (card.parentNode === grid) card.classList.remove('arriving');
+            grid.insertBefore(card, next);
         }
-        open.append(cover);
-        if (cloud && book.cloudFile && !localFiles.has(book.id)
-            && !(book.source.kind === 'fs' && roots.some(root => root.id === book.source.root))) {
-            const badge = localize(el('span', 'cloud-badge'), 'cloudOnly', {}, 'aria-label');
-            badge.classList.toggle('downloading', downloadingBooks.has(book.id));
-            badge.setAttribute('role', 'img'); badge.append(icon('cloud')); cover.append(badge);
-        }
-        const track = el('span', 'progress-track'), fill = el('span');
-        track.setAttribute('aria-hidden', 'true');
-        fill.style.setProperty('--fraction', clamp(book.fraction));
-        track.append(fill);
-        open.append(track);
-        open.append(el('span', 'book-title', book.title), el('span', 'book-author', book.author));
-        const meta = el('span', 'book-meta');
-        meta.append(el('span', '', book.ext.toUpperCase()), el('span', 'book-percent', book.finished === true ? t('finishedLabel') : t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) })));
-        open.append(meta);
-        const remove = el('button', 'delete');
-        remove.append(icon('delete'));
-        remove.dataset.delete = 'true';
-        remove.title = t(book.source.kind === 'fs' ? 'hideBook' : 'deleteBook', { title: book.title });
-        remove.setAttribute('aria-label', remove.title);
-        const change = el('button', 'delete category-change', '⋯');
-        change.dataset.actions = 'true';
-        change.setAttribute('aria-haspopup', 'dialog');
-        change.title = t('bookActions', { title: book.title });
-        change.setAttribute('aria-label', change.title);
-        change.disabled = remove.disabled = importing;
-        card.append(open, change, remove);
-        fragment.append(card);
+        next = card.nextSibling;
     }
-    $('#grid').classList.toggle('currently-reading', filter === 'reading');
-    $('#grid').replaceChildren(fragment);
+    grid.classList.toggle('currently-reading', filter === 'reading');
     listedBooks = visible;
-    // Detach every old image before revoking URLs it could still request lazily.
+    // Removed cards are detached and changed images have their new src before revocation.
     for (const url of retiredURLs) URL.revokeObjectURL(url);
     $('#library-count').textContent = visible.length === allBooks.length ? t(visible.length === 1 ? 'bookCountOne' : 'bookCountOther', { count: visible.length }) : t('countOf', { count: visible.length, total: allBooks.length });
     $('#clear-recent').hidden = filter !== 'recent';
@@ -722,6 +701,79 @@ function renderLibrary() {
     $('#no-results').hidden = (!allBooks.length && filter !== 'reading') || visible.length !== 0;
     localize($('#no-results h2'), filter === 'reading' && !query ? 'currentlyReading' : 'noResultsTitle');
     localize($('#no-results p'), filter === 'reading' && !query ? 'currentlyReadingEmpty' : 'noResultsText');
+}
+function createBookCard() {
+    const card = el('div', 'card'), open = el('button', 'book-open');
+    const track = el('span', 'progress-track');
+    track.setAttribute('aria-hidden', 'true'); track.append(el('span'));
+    const meta = el('span', 'book-meta');
+    meta.append(el('span'), el('span', 'book-percent'));
+    open.append(el('span', 'cover'), track, el('span', 'book-title'), el('span', 'book-author'), meta);
+    const remove = el('button', 'delete');
+    remove.append(icon('delete')); remove.dataset.delete = 'true';
+    const change = el('button', 'delete category-change', '⋯');
+    change.dataset.actions = 'true'; change.setAttribute('aria-haspopup', 'dialog');
+    card.append(open, change, remove);
+    return card;
+}
+function updateBookCard(card, book) {
+    const cloudOnly = Boolean(cloud && book.cloudFile && !localFiles.has(book.id)
+        && !(book.source.kind === 'fs' && roots.some(root => root.id === book.source.root)));
+    const state = [book.title, book.author, book.ext, book.cover, book.fraction, book.finished,
+        book.source.kind, cloudOnly, downloadingBooks.has(book.id), importing, lang];
+    const previous = cardStates.get(card);
+    if (previous && state.every((value, i) => value === previous[i])) return;
+    const text = (node, value) => { if (node.textContent !== value) node.textContent = value; };
+    const attr = (node, name, value) => { if (node.getAttribute(name) !== value) node.setAttribute(name, value); };
+    const open = card.querySelector('.book-open'), cover = card.querySelector('.cover');
+    attr(open, 'aria-label', t('openBook', { title: book.title }));
+    attr(open, 'title', `${book.title}${book.author ? ` · ${book.author}` : ''}`);
+    if (!previous || previous[3] !== book.cover || (!book.cover && state.slice(0, 3).some((value, i) => value !== previous[i]))) {
+        if (book.cover) {
+            if (!coverURLs.has(book.id)) {
+                coverURLs.set(book.id, URL.createObjectURL(book.cover)); coverBlobs.set(book.id, book.cover);
+            }
+            const image = cover.querySelector('img') || el('img');
+            if (image.src !== coverURLs.get(book.id)) image.src = coverURLs.get(book.id);
+            attr(image, 'alt', ''); attr(image, 'loading', 'lazy'); attr(image, 'decoding', 'async');
+            if (!image.parentNode) { cover.querySelector('.placeholder')?.remove(); cover.prepend(image); }
+            if (cover.classList.contains('no-cover')) cover.classList.remove('no-cover');
+        } else {
+            cover.querySelector('img')?.remove();
+            let hash = 0;
+            for (const character of book.title) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+            if (!cover.classList.contains('no-cover')) cover.classList.add('no-cover');
+            const color = `var(--cover-${Math.abs(hash) % 6})`;
+            if (cover.style.getPropertyValue('--cover-color') !== color) cover.style.setProperty('--cover-color', color);
+            let placeholder = cover.querySelector('.placeholder');
+            if (!placeholder) {
+                placeholder = el('span', 'placeholder');
+                placeholder.append(el('span', 'placeholder-format'), el('span', 'placeholder-title'), el('span', 'placeholder-author'));
+                cover.prepend(placeholder);
+            }
+            text(placeholder.children[0], book.ext.toUpperCase());
+            text(placeholder.children[1], book.title);
+            text(placeholder.children[2], book.author || 'Leeslamp');
+        }
+    }
+    let badge = cover.querySelector('.cloud-badge');
+    if (cloudOnly) {
+        if (!badge) { badge = el('span', 'cloud-badge'); badge.setAttribute('role', 'img'); badge.append(icon('cloud')); cover.append(badge); }
+        attr(badge, 'aria-label', t('cloudOnly'));
+        badge.classList.toggle('downloading', downloadingBooks.has(book.id));
+    } else badge?.remove();
+    const fill = card.querySelector('.progress-track span'), fraction = String(clamp(book.fraction));
+    if (fill.style.getPropertyValue('--fraction') !== fraction) fill.style.setProperty('--fraction', fraction);
+    text(card.querySelector('.book-title'), book.title);
+    text(card.querySelector('.book-author'), book.author);
+    text(card.querySelector('.book-meta').firstChild, book.ext.toUpperCase());
+    text(card.querySelector('.book-percent'), book.finished === true ? t('finishedLabel') : t('percentRead', { percent: Math.round(clamp(book.fraction) * 100) }));
+    for (const [selector, key] of [['[data-delete]', book.source.kind === 'fs' ? 'hideBook' : 'deleteBook'], ['[data-actions]', 'bookActions']]) {
+        const button = card.querySelector(selector), label = t(key, { title: book.title });
+        attr(button, 'title', label); attr(button, 'aria-label', label);
+        if (button.disabled !== importing) button.disabled = importing;
+    }
+    cardStates.set(card, state);
 }
 $('#grid').addEventListener('animationend', event => {
     const card = event.target.closest('.card');
@@ -733,7 +785,8 @@ $('#reset-filters').addEventListener('click', () => {
 });
 $('#filters').addEventListener('click', e => {
     const button = e.target.closest('[data-filter]');
-    if (button) { filter = button.dataset.filter; renderLibrary(); setFiltersOpen(false); }
+    // Restore focus before changing the grid, so focus() cannot force its new layout.
+    if (button) { filter = button.dataset.filter; setFiltersOpen(false); renderLibrary(); }
 });
 const mobileFilters = matchMedia('(max-width:760px)');
 let filtersOpen = false, filterScroll = '', refreshPending = false;
@@ -750,21 +803,32 @@ function setFiltersOpen(open, fromHistory = false) {
         else $('#filters').removeAttribute(attribute);
     }
     if (open) { filterScroll = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
-    else { document.body.style.overflow = filterScroll; if (refreshPending) { refreshPending = false; renderLibrary(); } }
-    for (const node of [$('#library main'), ...$('#sidebar').children].filter(node => node.id !== 'filters')) node.inert = open;
+    else document.body.style.overflow = filterScroll;
+    const main = $('#library main');
+    if (!open) main.removeAttribute('aria-hidden');
+    for (const node of [...$('#sidebar').children].filter(node => node.id !== 'filters')) node.inert = open;
     (open ? $('#filters-close') : mobileFilters.matches ? $('#filters-toggle') : $('#filters [aria-current]')).focus({ preventScroll: true });
+    // Avoid inert's descendant work across the grid. Hide it from assistive technology
+    // only after focus has left it; keyboard focus is contained by the handlers below.
+    if (open) main.setAttribute('aria-hidden', 'true');
+    main.style.pointerEvents = open ? 'none' : '';
+    if (!open && refreshPending) { refreshPending = false; renderLibrary(); }
 }
 $('#filters-toggle').addEventListener('click', () => setFiltersOpen(!filtersOpen));
 $('#filters-close').addEventListener('click', () => setFiltersOpen(false));
 window.addEventListener('popstate', () => setFiltersOpen(false, true));
 mobileFilters.addEventListener('change', () => setFiltersOpen(false));
+document.addEventListener('focusin', event => {
+    if (filtersOpen && !$('#filters').contains(event.target)) $('#filters-close').focus({ preventScroll: true });
+});
 document.addEventListener('keydown', event => {
     if (!filtersOpen) return;
     if (event.key === 'Escape') { event.preventDefault(); setFiltersOpen(false); }
     if (event.key === 'Tab') {
         const buttons = [...$('#filters').querySelectorAll('button')], first = buttons[0], last = buttons.at(-1);
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        const outside = !$('#filters').contains(document.activeElement);
+        if (event.shiftKey && (document.activeElement === first || outside)) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || outside)) { event.preventDefault(); first.focus(); }
     }
 });
 $('#sort').addEventListener('change', renderLibrary);
@@ -985,7 +1049,10 @@ const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
 function setImporting(value) {
     importing = value;
     for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
-    for (const button of $('#grid').querySelectorAll('.delete')) button.disabled = value;
+    for (const button of $('#grid').querySelectorAll('.delete')) {
+        button.disabled = value;
+        cardStates.delete(button.closest('.card'));
+    }
     $('#clear-recent').disabled = value || !listedBooks.length;
     $('#rescan').hidden = !roots.some(root => root.linked);
 }
