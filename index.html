@@ -65,6 +65,8 @@
     .brand svg { width:28px; height:32px; color:var(--accent); }
     .sidebar-heading { padding:0 12px 12px; }
     #filters { overflow:auto; flex:1; scrollbar-width:thin; }
+    #filters-toggle,.filters-heading { display:none; }
+    #filter-list { display:contents; }
     #filters button { position:relative; width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; margin:2px 0; padding:10px 12px; font-size:13px; }
     #filters button[aria-current] { background:var(--hover); font-weight:600; }
     #filters button[aria-current]::before { content:''; position:absolute; left:0; top:12px; bottom:12px; width:2px; background:var(--accent); }
@@ -249,6 +251,16 @@
     #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
     #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(560px,calc(100% - 32px)); max-height:60vh; overflow:auto; overflow-wrap:anywhere; background:var(--fg); color:var(--bg); border-left:3px solid var(--accent); padding:14px 20px; font-size:12px; border-radius:2px; box-shadow:var(--shadow); white-space:pre-line; animation:toast-in 500ms var(--ease); }
     #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
+    #loading.downloading { justify-items:center; gap:16px; text-align:center; }
+    .download-vessel { width:80px; height:112px; color:var(--accent); }
+    .download-level { transform:translateY(calc((1 - var(--download-fraction, .45)) * 100px)); transition:transform 300ms ease-out; }
+    .download-indeterminate .download-level { animation:liquid-breathe 3s ease-in-out infinite alternate; }
+    .download-bubble { fill:var(--side); opacity:0; animation:bubble-rise var(--duration) ease-in infinite; animation-delay:var(--delay); }
+    .download-bytes { font-size:11px; color:var(--rmuted); font-variant-numeric:tabular-nums; letter-spacing:0; }
+    .download-complete .download-bubble { animation:none; }
+    @keyframes liquid-breathe { from { transform:translateY(70px); } to { transform:translateY(40px); } }
+    @keyframes bubble-rise { 0% { transform:translate(0,0); opacity:0; } 20% { opacity:.65; } 55% { transform:translate(3px,-50px); opacity:.45; } 100% { transform:translate(-2px,-100px); opacity:0; } }
+    @media (prefers-reduced-motion:reduce) { .download-bubble { display:none; } }
     @keyframes cover-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
     @keyframes view-in { from { opacity:0; } to { opacity:1; } }
     @keyframes panel-in { from { opacity:0; transform:translateY(-6px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
@@ -273,10 +285,14 @@
       #account-button .account-avatar { width:28px; height:28px; }
       #mode { order:1; }
       #lang { order:2; gap:2px; }
-      #filters { grid-column:1/-1; order:2; display:flex; align-items:center; gap:8px; padding:4px 0 10px; overflow-x:auto; }
-      #filters button { flex-shrink:0; width:auto; font-size:11px; padding:6px 10px; margin:0; min-height:32px; }
-      #filters button[aria-current]::before { top:auto; bottom:0; left:10px; right:10px; width:auto; height:2px; }
-      #filters .section-label { padding:0 4px 0 12px; }
+      #filters-toggle { grid-column:1/-1; order:2; display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; height:40px; margin-bottom:10px; padding:0 12px; text-align:left; }
+      #filters-toggle-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #filters { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; overflow:hidden; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); background:var(--side); visibility:hidden; pointer-events:none; opacity:0; transform:translateY(100%); transition:transform 150ms var(--ease),opacity 150ms var(--ease),visibility 0s 150ms; }
+      #sidebar.filters-open #filters { visibility:visible; pointer-events:auto; opacity:1; transform:translateY(0); transition:transform 500ms var(--ease),opacity 500ms var(--ease); }
+      #filters .filters-heading { display:flex; align-items:center; justify-content:space-between; flex:0 0 48px; border-bottom:1px solid var(--line); margin-bottom:8px; }
+      #filters #filters-close { width:28px; min-height:28px; padding:4px; margin:0; }
+      #filter-list { display:block; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+      #filters .count { margin-left:auto; flex-shrink:0; }
       .library-content { padding:24px 20px 40px; }
       .library-header { gap:20px; padding-bottom:20px; }
       .heading h1 { font-size:30px; }
@@ -314,6 +330,7 @@
     <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-toc" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h8M3 6h1m-1 6h1m-1 6h1"/></symbol>
     <symbol id="i-device" viewBox="0 0 24 24"><path d="M4 4h16v12H4zM2 20h20"/></symbol>
     <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none"/></symbol>
@@ -326,7 +343,11 @@
     <aside id="sidebar" aria-label="Bibliotheek" data-i18n="" data-i18n-aria-label="library">
       <div class="brand"><svg class="icon" aria-hidden="true"><use href="#i-lamp"/></svg>Leeslamp</div>
       <div class="sidebar-heading eyebrow" data-i18n="library">Bibliotheek</div>
-      <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters"></nav>
+      <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters">
+        <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+        <div id="filter-list"></div>
+      </nav>
+      <button id="filters-toggle" class="folder-button" aria-expanded="false" aria-controls="filters"><span id="filters-toggle-label"></span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
       <div class="sidebar-bottom">
         <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
         <button class="folder-button" id="find-books" hidden data-i18n="findBooks" aria-describedby="find-books-hint">Boeken zoeken</button>

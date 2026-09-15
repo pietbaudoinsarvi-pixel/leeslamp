@@ -176,6 +176,33 @@ function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm 
 const warnings = [], originalWarn = console.warn, originalFetch = globalThis.fetch;
 console.warn = (...args) => warnings.push(args);
 try {
+    // Chunked binary response: progress is bounded, totals prefer the header, bytes survive intact.
+    const streamed = fixture({ remote: [{ ...row, cover: false }] });
+    await streamed.cloud.start();
+    const payload = Uint8Array.from({ length: 8192 }, (_, i) => i % 256), downloadProgress = [];
+    streamed.intercept(async call => {
+        if (call.url.searchParams.get('alt') !== 'media') return;
+        let offset = 0;
+        return new Response(new ReadableStream({ async pull(controller) {
+            if (offset === payload.length) { controller.close(); return; }
+            await new Promise(resolve => setTimeout(resolve, 35));
+            controller.enqueue(payload.slice(offset, offset += 1024));
+        } }), { headers: { 'Content-Length': String(payload.length), 'Content-Type': 'application/epub+zip' } });
+    });
+    const streamedBlob = await streamed.cloud.download({ ...streamed.localBooks.get('one'), size: 1 },
+        (received, total) => downloadProgress.push({ received, total, time: performance.now() }));
+    assert.deepEqual(new Uint8Array(await streamedBlob.arrayBuffer()), payload);
+    assert.equal(streamed.files.get('one'), streamedBlob);
+    assert.equal(streamedBlob.type, 'application/epub+zip');
+    assert.equal(downloadProgress[0].received, 0);
+    assert.equal(downloadProgress.at(-1).received, payload.length);
+    assert.ok(downloadProgress.some(p => p.received > 0 && p.received < payload.length));
+    for (const [i, p] of downloadProgress.entries()) {
+        assert.equal(p.total, payload.length);
+        if (i) assert.ok(p.received >= downloadProgress[i - 1].received);
+        if (i && i < downloadProgress.length - 1) assert.ok(p.time - downloadProgress[i - 1].time >= 99);
+    }
+    console.log('PASS: streamed download reports throttled progress and yields the full binary bytes.');
     const assertProgress = (f, total) => {
         assert.ok(f.progress.length > 0);
         assert.equal(f.progress.at(-1).done, total);

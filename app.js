@@ -30,6 +30,9 @@ const STRINGS = {
         appTitle: 'Leeslamp · Je eigen leesruimte',
         description: 'Je boeken, rustig bij elkaar. Lees lokaal met Leeslamp.',
         library: 'Bibliotheek',
+        closeFilters: 'Filters sluiten',
+        downloading: 'Downloaden uit je cloud…',
+        storageFull: 'Opslag van je apparaat is vol. Maak ruimte vrij of verwijder boeken.',
         allBooks: 'Alle boeken',
         currentlyReading: 'Nu aan het lezen',
         currentlyReadingEmpty: 'Open een boek en het verschijnt hier.',
@@ -202,6 +205,9 @@ const STRINGS = {
         appTitle: 'Leeslamp · Your reading space',
         description: 'A quiet home for your books. Read locally with Leeslamp.',
         library: 'Library',
+        closeFilters: 'Close filters',
+        downloading: 'Downloading from your cloud…',
+        storageFull: 'Your device storage is full. Free up space or remove books.',
         allBooks: 'All books',
         currentlyReading: 'Currently reading',
         currentlyReadingEmpty: 'Open a book and it will appear here.',
@@ -385,22 +391,33 @@ const database = () => dbPromise ??= new Promise((resolve, reject) => {
     };
     request.onsuccess = () => {
         request.result.onversionchange = () => { request.result.close(); dbPromise = null; };
+        request.result.onclose = () => { dbPromise = null; };
         resolve(request.result);
     };
     request.onerror = () => { dbPromise = null; reject(request.error); };
     request.onblocked = () => toast(() => t('storageBlocked'));
 });
-const tx = async (store, mode, fn) => {
+const connectionLost = error => ['InvalidStateError', 'UnknownError'].includes(error?.name) || /Connection/i.test(error?.message || '');
+const recoverStorage = async operation => {
+    try { return await operation(); }
+    catch (error) {
+        if (!connectionLost(error)) throw error;
+        const stale = dbPromise; dbPromise = null;
+        try { (await stale)?.close(); } catch {}
+        return operation();
+    }
+};
+const tx = (store, mode, fn) => recoverStorage(async () => {
     const db = await database();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(store, mode);
         let request;
         transaction.oncomplete = () => resolve(request?.result);
-        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
+        transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('storageFailed')));
         try { request = fn(transaction.objectStore(store), transaction); }
         catch (error) { transaction.abort(); reject(error); }
     });
-};
+});
 const put = async (store, obj) => {
     if (store === 'books') obj.updated = Date.now();
     const result = await tx(store, 'readwrite', s => s.put(obj));
@@ -412,18 +429,20 @@ const all = store => tx(store, 'readonly', s => s.getAll());
 // Import/delete are atomic across both stores, including quota failures.
 const bookTransaction = async (record, file, remove = false) => {
     record.updated = Date.now();
-    const db = await database();
-    await new Promise((resolve, reject) => {
-        const transaction = db.transaction(['files', 'books'], 'readwrite');
-        transaction.oncomplete = resolve;
-        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
-        if (remove) {
-            transaction.objectStore('books').delete(record.id);
-            transaction.objectStore('files').delete(record.id);
-        } else {
-            transaction.objectStore('files').put({ id: record.id, file });
-            transaction.objectStore('books').put(record);
-        }
+    await recoverStorage(async () => {
+        const db = await database();
+        await new Promise((resolve, reject) => {
+            const transaction = db.transaction(['files', 'books'], 'readwrite');
+            transaction.oncomplete = resolve;
+            transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('storageFailed')));
+            if (remove) {
+                transaction.objectStore('books').delete(record.id);
+                transaction.objectStore('files').delete(record.id);
+            } else {
+                transaction.objectStore('files').put({ id: record.id, file });
+                transaction.objectStore('books').put(record);
+            }
+        });
     });
     if (remove) { localFiles.delete(record.id); cloud?.remove(record); }
     else localFiles.add(record.id);
@@ -487,7 +506,7 @@ $('#lang').addEventListener('click', () => {
 
 const writeSetting = (key, value) => {
     try { localStorage.setItem(key, value); }
-    catch { toast(() => t('prefsFailed')); }
+    catch (error) { report(() => t('prefsFailed'), error); }
 };
 let toastTimer, toastMessage;
 function toast(message, duration = 4000) {
@@ -497,7 +516,9 @@ function toast(message, duration = 4000) {
     $('#toast').hidden = false;
     if (duration) toastTimer = setTimeout(() => { $('#toast').hidden = true; toastMessage = null; }, duration);
 }
-const report = (message, error) => { console.error(error); toast(message); };
+const failureMessage = (message, error) => error?.name === 'QuotaExceededError' ? t('storageFull')
+    : `${typeof message === 'function' ? message() : message}${error?.name && !connectionLost(error) ? ` (${error.name})` : ''}`;
+const report = (message, error) => { console.error(error); toast(() => failureMessage(message, error)); };
 
 // App chrome and reader preferences are deliberately independent.
 const THEMES = {
@@ -603,9 +624,10 @@ function renderFilters() {
     const extensions = [...new Set(visible.map(b => b.ext))].sort();
     if (extensions.length) fragment.append(el('div', 'section-label', t('format')));
     for (const ext of extensions) add(ext, ext.toUpperCase(), visible.filter(b => b.ext === ext).length);
-    $('#filters').replaceChildren(fragment);
-    if (focusedFilter) [...$('#filters').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
+    $('#filter-list').replaceChildren(fragment);
+    if (focusedFilter) [...$('#filter-list').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filter-title').textContent = filterName();
+    $('#filters-toggle-label').textContent = `${filterName()} · ${$('#filters [aria-current] .count').textContent}`;
 }
 function renderLibrary() {
     renderFilters();
@@ -712,7 +734,39 @@ $('#reset-filters').addEventListener('click', () => {
 });
 $('#filters').addEventListener('click', e => {
     const button = e.target.closest('[data-filter]');
-    if (button) { filter = button.dataset.filter; renderLibrary(); }
+    if (button) { filter = button.dataset.filter; renderLibrary(); setFiltersOpen(false); }
+});
+const mobileFilters = matchMedia('(max-width:760px)');
+let filtersOpen = false, filterScroll = '';
+function setFiltersOpen(open, fromHistory = false) {
+    open = open && mobileFilters.matches;
+    if (open === filtersOpen) return;
+    filtersOpen = open;
+    if (open) history.pushState({ ...history.state, leeslampFilters: true }, '');
+    else if (!fromHistory && history.state?.leeslampFilters) history.back();
+    $('#sidebar').classList.toggle('filters-open', open);
+    $('#filters-toggle').setAttribute('aria-expanded', String(open));
+    for (const attribute of ['role', 'aria-modal', 'aria-labelledby']) {
+        if (open) $('#filters').setAttribute(attribute, { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'filters-heading' }[attribute]);
+        else $('#filters').removeAttribute(attribute);
+    }
+    if (open) { filterScroll = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+    else document.body.style.overflow = filterScroll;
+    for (const node of [$('#library main'), ...$('#sidebar').children].filter(node => node.id !== 'filters')) node.inert = open;
+    (open ? $('#filters-close') : mobileFilters.matches ? $('#filters-toggle') : $('#filters [aria-current]')).focus({ preventScroll: true });
+}
+$('#filters-toggle').addEventListener('click', () => setFiltersOpen(!filtersOpen));
+$('#filters-close').addEventListener('click', () => setFiltersOpen(false));
+window.addEventListener('popstate', () => setFiltersOpen(false, true));
+mobileFilters.addEventListener('change', () => setFiltersOpen(false));
+document.addEventListener('keydown', event => {
+    if (!filtersOpen) return;
+    if (event.key === 'Escape') { event.preventDefault(); setFiltersOpen(false); }
+    if (event.key === 'Tab') {
+        const buttons = [...$('#filters').querySelectorAll('button')], first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
 });
 $('#sort').addEventListener('change', renderLibrary);
 $('#search').addEventListener('input', () => {
@@ -1027,7 +1081,7 @@ async function importFiles(files, categoryForFile) {
             count++;
             pipeline.remember(record.category);
             await pipeline.enqueue(record);
-        } catch (error) { console.error(error); failures.push(() => t('importFailedFile', { name: file.name })); }
+        } catch (error) { console.error(error); failures.push(() => failureMessage(() => t('importFailedFile', { name: file.name }), error)); }
         if (performance.now() - lastRender >= 500) { renderLibrary(); lastRender = performance.now(); }
         await yieldUI();
     }
@@ -1392,7 +1446,39 @@ async function openBook(record) {
             file ||= (await get('files', record.id))?.file;
             if (!file && cloud.signedIn && record.cloudFile) {
                 downloading(record.id, 1);
-                try { file = await cloud.download(record); }
+                try {
+                    const loading = $('#loading');
+                    // A book-shaped reservoir, clipped both to its cover and the liquid surface.
+                    loading.removeAttribute('data-i18n'); loading.className = 'downloading download-indeterminate';
+                    loading.replaceChildren(localize(el('span'), 'downloading'));
+                    const vessel = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    vessel.setAttribute('class', 'download-vessel'); vessel.setAttribute('viewBox', '0 0 80 112'); vessel.setAttribute('aria-hidden', 'true');
+                    vessel.innerHTML = `<defs>
+                        <clipPath id="download-book"><rect x="13" y="6" width="54" height="100" rx="2"/></clipPath>
+                        <clipPath id="download-surface"><rect class="download-level" x="0" y="6" width="80" height="100"/></clipPath>
+                        <linearGradient id="download-fade" x2="0" y2="1"><stop stop-color="white" stop-opacity="0"/><stop offset=".12" stop-color="white"/></linearGradient>
+                        <mask id="download-bubbles" maskUnits="userSpaceOnUse" x="0" y="0" width="80" height="112"><rect class="download-level" x="0" y="6" width="80" height="100" fill="url(#download-fade)"/></mask>
+                    </defs>
+                    <rect x="13" y="6" width="54" height="100" rx="2" fill="var(--side)"/>
+                    <g clip-path="url(#download-book)"><g clip-path="url(#download-surface)">
+                        <rect x="13" y="6" width="54" height="100" fill="currentColor"/>
+                        <g mask="url(#download-bubbles)">${Array.from({ length: 8 }, (_, i) => `<circle class="download-bubble" cx="${23 + i * 5}" cy="104" r="${1.3 + i % 3 * .45}" style="--duration:${1.5 + i * .2}s;--delay:-${i * .37}s"/>`).join('')}</g>
+                    </g></g>
+                    <path d="M20 6v100M10 109h60M33 32h14l7 18H26l7-18Zm7 18v20M31 72h18" fill="none" stroke="var(--mute)" stroke-width="1"/>
+                    <rect x="13" y="6" width="54" height="100" rx="2" fill="none" stroke="var(--mute)" stroke-width="1"/>`;
+                    const bytes = el('span', 'download-bytes');
+                    loading.append(vessel, bytes);
+                    const progress = (received, total) => {
+                        if (!live(session)) return;
+                        loading.classList.toggle('download-indeterminate', !total);
+                        loading.style.setProperty('--download-fraction', total ? clamp(received / total) : .45);
+                        const format = new Intl.NumberFormat(lang, { style: 'unit', unit: 'megabyte', unitDisplay: 'short', maximumFractionDigits: 1 });
+                        bytes.textContent = `${format.format(received / 1e6)}${total ? ` / ${format.format(total / 1e6)}` : ''}`;
+                    };
+                    progress(0, Number.isFinite(record.size) ? record.size : 0);
+                    file = await cloud.download(record, progress);
+                    progress(file.size, file.size); loading.classList.add('download-complete');
+                }
                 finally { downloading(record.id, -1); }
             }
         } else if (record.source.kind === 'fs') {
@@ -1865,20 +1951,22 @@ $('#justify').addEventListener('change', e => {
 
 // Cloud writes use an atomic read/merge and never call the mutation helpers above.
 async function cloudChange(id, merge) {
-    const db = await database();
     let changed;
-    await new Promise((resolve, reject) => {
-        const transaction = db.transaction(['books', 'files'], 'readwrite');
-        transaction.oncomplete = resolve;
-        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
-        const store = transaction.objectStore('books'), request = store.get(id);
-        request.onsuccess = () => {
-            try {
-                changed = merge(request.result);
-                if (changed === null) { store.delete(id); transaction.objectStore('files').delete(id); }
-                else if (changed !== undefined) store.put(changed);
-            } catch (error) { transaction.abort(); reject(error); }
-        };
+    await recoverStorage(async () => {
+        const db = await database();
+        await new Promise((resolve, reject) => {
+            const transaction = db.transaction(['books', 'files'], 'readwrite');
+            transaction.oncomplete = resolve;
+            transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('storageFailed')));
+            const store = transaction.objectStore('books'), request = store.get(id);
+            request.onsuccess = () => {
+                try {
+                    changed = merge(request.result);
+                    if (changed === null) { store.delete(id); transaction.objectStore('files').delete(id); }
+                    else if (changed !== undefined) store.put(changed);
+                } catch (error) { transaction.abort(); reject(error); }
+            };
+        });
     });
     if (changed === null) {
         books = books.filter(book => book.id !== id); localFiles.delete(id); presentedBooks.delete(id);

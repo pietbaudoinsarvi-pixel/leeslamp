@@ -448,19 +448,44 @@ export function createCloud(local, ui) {
             check(uid, generation);
             await sync(true);
         },
-        async download(record) {
+        async download(record, onProgress) {
             const uid = session?.user.id, generation = epoch;
             check(uid, generation);
-            let id = record.driveFile || await findFile(uid, generation, record.id), blob;
+            const started = performance.now();
+            let id = record.driveFile || await findFile(uid, generation, record.id), response;
             if (!id) throw new Error('File unavailable');
-            try { blob = await drive(`${filePath(id)}?alt=media`, { format: 'blob' }, uid, generation); }
+            try { response = await drive(`${filePath(id)}?alt=media`, { format: 'raw' }, uid, generation); }
             catch (error) {
                 if (error.status !== 404) throw error;
                 id = await findFile(uid, generation, record.id);
                 if (!id) throw new Error('File unavailable');
-                blob = await drive(`${filePath(id)}?alt=media`, { format: 'blob' }, uid, generation);
+                response = await drive(`${filePath(id)}?alt=media`, { format: 'raw' }, uid, generation);
             }
             check(uid, generation);
+            const length = Number(response.headers.get('Content-Length'));
+            const total = Number.isFinite(length) && length > 0 ? length : Number.isFinite(record.size) ? Math.max(0, record.size) : 0;
+            const reader = response.body?.getReader(), chunks = [];
+            let received = 0, lastProgress = performance.now(), blob;
+            onProgress?.(0, total);
+            if (reader) {
+                try {
+                    for (;;) {
+                        check(uid, generation);
+                        const { done, value } = await reader.read();
+                        check(uid, generation);
+                        if (done) break;
+                        chunks.push(value); received += value.byteLength;
+                        if (performance.now() - lastProgress >= 100) {
+                            onProgress?.(received, total); lastProgress = performance.now();
+                        }
+                    }
+                } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+                finally { reader.releaseLock(); }
+                blob = new Blob(chunks, { type: response.headers.get('Content-Type') || '' });
+            } else { blob = await response.blob(); received = blob.size; }
+            check(uid, generation);
+            onProgress?.(received, total);
+            console.info(`cloud download ${record.name} ${received} ${Math.round(performance.now() - started)}`);
             await local.saveFile(record.id, blob, () => valid(uid, generation));
             await local.change(record.id, current => current && valid(uid, generation) ? { ...current, driveFile: id } : undefined);
             check(uid, generation);
