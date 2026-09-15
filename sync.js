@@ -48,7 +48,7 @@ export function createCloud(local, ui) {
     let authWork = Promise.resolve(), refreshing = null, folderWork = null;
     let lastProgress = -Infinity;
     let sessionFailed = false, recovering = null, enabled = true;
-    const uploads = new Map();
+    const uploads = new Map(), pushed = new Map();
     const cursorKey = uid => `leeslamp.cloud.pull.${uid}`;
     const folderKey = uid => `leeslamp.cloud.folder.${uid}`;
     const valid = (uid, generation) => ready && session?.user.id === uid && epoch === generation;
@@ -199,7 +199,26 @@ export function createCloud(local, ui) {
         const cursor = localStorage.getItem(cursorKey(uid)) || '1970-01-01T00:00:00.000Z';
         let latest = cursor;
         const files = await list(uid, generation, `name contains 'book-' and modifiedTime > ${literal(cursor)}`);
-        const count = progress(uid, generation, files.length);
+        const items = [];
+        await pool(files, 4, async file => {
+            check(uid, generation);
+            if (!file.name.startsWith('book-') || !file.name.endsWith('.json')) return;
+            const id = file.name.slice(5, -5), properties = file.appProperties || {};
+            const updated = Number(properties.updated);
+            if (!Number.isFinite(updated) || !Number.isFinite(Date.parse(file.modifiedTime))) throw new Error('Invalid cloud row');
+            if (file.modifiedTime > latest) latest = file.modifiedTime;
+            if (pushed.get(id) === updated) return;
+            if (updated > pushed.get(id)) pushed.delete(id);
+            const pending = queue().find(item => item.sub === uid && item.id === id);
+            if (pending && pending.updated >= updated) return;
+            const current = await local.get(id);
+            check(uid, generation);
+            const row = { id, updated, deleted: properties.deleted === '1', file: properties.file === '1', cover: properties.cover === '1' };
+            if (row.deleted ? current && (current.updated ?? 0) <= updated : !current || updated > (current.updated ?? 0)) {
+                items.push({ file, current, row });
+            }
+        });
+        const count = progress(uid, generation, items.length);
         let mergedCount = 0, lastRender = Date.now(), renderTimer, rendering = Promise.resolve();
         const refreshBatch = () => {
             clearTimeout(renderTimer); renderTimer = null;
@@ -209,42 +228,32 @@ export function createCloud(local, ui) {
             void rendering.catch(() => {});
             return rendering;
         };
-        try { await pool(files, 4, async file => {
+        try { await pool(items, 4, async ({ file, current, row }) => {
             try {
                 check(uid, generation);
-                if (!file.name.startsWith('book-') || !file.name.endsWith('.json')) return;
-                const id = file.name.slice(5, -5), properties = file.appProperties || {};
-                const updated = Number(properties.updated);
-                if (!Number.isFinite(updated) || !Number.isFinite(Date.parse(file.modifiedTime))) throw new Error('Invalid cloud row');
-                const pending = queue().find(item => item.sub === uid && item.id === id);
-                const current = await local.get(id);
-                if ((!pending || pending.updated < updated) && (!current || (current.updated ?? 0) <= updated)) {
-                    const row = { id, updated, deleted: properties.deleted === '1', file: properties.file === '1', cover: properties.cover === '1' };
-                    if (!row.deleted && (!current || updated > (current.updated ?? 0))) {
-                        row.data = await drive(`${filePath(file.id)}?alt=media`, {}, uid, generation);
-                    }
-                    let cover;
-                    if (!current && !row.deleted && row.cover) {
-                        const coverId = await findName(uid, generation, name(id, true));
-                        if (coverId) cover = await drive(`${filePath(coverId)}?alt=media`, { format: 'blob' }, uid, generation);
-                        // Safari: a stream-backed fetch Blob stored in IndexedDB can render as a broken image; copy the bytes into a plain typed Blob.
-                        if (cover) cover = new Blob([await cover.arrayBuffer()], { type: 'image/jpeg' });
-                    }
-                    check(uid, generation);
-                    let changed = false;
-                    await local.change(id, localRecord => {
-                        if (!valid(uid, generation)) return undefined;
-                        const merged = mergeRow(localRecord, row);
-                        changed = merged !== undefined;
-                        if (merged) { merged.driveJson = file.id; if (!localRecord && cover) merged.cover = cover; }
-                        return merged;
-                    });
-                    if (changed) {
-                        if (++mergedCount >= 10 || Date.now() - lastRender >= 500) await refreshBatch();
-                        else if (!renderTimer) renderTimer = setTimeout(refreshBatch, Math.max(0, 500 - (Date.now() - lastRender)));
-                    }
+                if (!row.deleted) {
+                    row.data = await drive(`${filePath(file.id)}?alt=media`, {}, uid, generation);
                 }
-                if (file.modifiedTime > latest) latest = file.modifiedTime;
+                let cover;
+                if (!current && !row.deleted && row.cover) {
+                    const coverId = await findName(uid, generation, name(row.id, true));
+                    if (coverId) cover = await drive(`${filePath(coverId)}?alt=media`, { format: 'blob' }, uid, generation);
+                    // Safari: a stream-backed fetch Blob stored in IndexedDB can render as a broken image; copy the bytes into a plain typed Blob.
+                    if (cover) cover = new Blob([await cover.arrayBuffer()], { type: 'image/jpeg' });
+                }
+                check(uid, generation);
+                let changed = false;
+                await local.change(row.id, localRecord => {
+                    if (!valid(uid, generation)) return undefined;
+                    const merged = mergeRow(localRecord, row);
+                    changed = merged !== undefined;
+                    if (merged) { merged.driveJson = file.id; if (!localRecord && cover) merged.cover = cover; }
+                    return merged;
+                });
+                if (changed) {
+                    if (++mergedCount >= 10 || Date.now() - lastRender >= 500) await refreshBatch();
+                    else if (!renderTimer) renderTimer = setTimeout(refreshBatch, Math.max(0, 500 - (Date.now() - lastRender)));
+                }
             } finally { count.update(1); }
         }); } finally {
             clearTimeout(renderTimer);
@@ -268,6 +277,8 @@ export function createCloud(local, ui) {
             if (!current || (current.updated ?? 0) <= item.updated) {
                 await writeNamed(uid, generation, name(item.id), new Blob([JSON.stringify({ updated: item.updated, deleted: true })], { type: 'application/json' }),
                     { updated: String(item.updated), deleted: '1', file: '0', cover: '0' });
+                check(uid, generation);
+                pushed.set(item.id, item.updated);
                 await deleteFile(uid, generation, await findName(uid, generation, name(item.id, true)));
                 await deleteFile(uid, generation, await findFile(uid, generation, item.id));
             }
@@ -277,7 +288,7 @@ export function createCloud(local, ui) {
     }
     async function push(uid, generation) {
         const items = planPush(await local.all()).map(record => ({ record }));
-        // Blob references let the phase count actual files without reading their bytes.
+        // Resolve blob references without reading their bytes.
         await pool(items, 4, async item => {
             try {
                 check(uid, generation);
@@ -286,12 +297,10 @@ export function createCloud(local, ui) {
                     item.file = uploads.get(record.id) || await local.file(record.id);
                 }
             } catch (error) { item.error = error; }
-            item.remaining = 1 + Number(!!item.file) + Number(!!item.record.cover && !item.record.coverSynced);
         });
-        const count = progress(uid, generation, items.reduce((sum, item) => sum + item.remaining, 0));
+        const count = progress(uid, generation, items.length);
         try { await pool(items, 4, async item => {
             const { record, file } = item;
-            const completed = () => { item.remaining--; count.update(1); };
             try {
                 check(uid, generation);
                 if (item.error) throw item.error;
@@ -299,12 +308,10 @@ export function createCloud(local, ui) {
                 if (file) {
                     flags.driveFile = await uploadFile(uid, generation, record, file);
                     flags.fileSynced = flags.cloudFile = true;
-                    completed();
                 }
                 if (record.cover && !record.coverSynced) {
                     await writeNamed(uid, generation, name(record.id, true), new Blob([record.cover], { type: 'image/jpeg' }), null);
                     flags.coverSynced = true;
-                    completed();
                 }
                 check(uid, generation);
                 await local.change(record.id, current => current && valid(uid, generation) ? { ...current, ...flags } : undefined);
@@ -313,11 +320,12 @@ export function createCloud(local, ui) {
                     file: record.cloudFile === true || record.fileSynced === true ? '1' : '0', cover: record.coverSynced === true ? '1' : '0' };
                 const driveJson = await writeNamed(uid, generation, name(record.id), new Blob([JSON.stringify({ ...recordData(record), updated: record.updated, deleted: false })], { type: 'application/json' }), properties, record.driveJson);
                 check(uid, generation);
+                pushed.set(record.id, record.updated);
                 await local.change(record.id, current => current && valid(uid, generation) ? { ...current, driveJson, synced: record.updated } : undefined);
                 if (record.fileSynced) uploads.delete(record.id);
             } finally {
                 // Failed/skipped work is processed too; the pool still reports failure.
-                count.update(item.remaining); item.file = null;
+                count.update(1); item.file = null;
             }
         }); } finally { await count.finish(); }
     }
@@ -386,7 +394,7 @@ export function createCloud(local, ui) {
         const previous = session?.user.id;
         session = next; ready = false; sessionFailed = false; again = false; clearTimeout(timer);
         const generation = ++epoch;
-        uploads.clear();
+        uploads.clear(); pushed.clear();
         if (previous) {
             try { localStorage.removeItem(cursorKey(previous)); localStorage.removeItem(folderKey(previous)); } catch { failure(); }
         }

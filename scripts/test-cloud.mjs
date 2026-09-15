@@ -148,7 +148,8 @@ function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm 
         try { return await fetch(path, init); } finally { if (drive) inFlight--; }
     };
     const local = {
-        all: async () => structuredClone([...localBooks.values()]), get: async id => structuredClone(localBooks.get(id)),
+        all: async () => structuredClone([...localBooks.values()]),
+        get: async id => { calls.push({ type: 'get', id }); return structuredClone(localBooks.get(id)); },
         async change(id, merge) {
             const next = merge(structuredClone(localBooks.get(id)));
             if (next === null) { localBooks.delete(id); files.delete(id); }
@@ -213,6 +214,58 @@ try {
             if (i) assert.ok(value.time - f.progress[i - 1].time >= 100, 'progress throttled to 100 ms');
         }
     };
+    const selective = fixture({
+        remote: Array.from({ length: 10 }, (_, i) => ({ ...row, id: `select-${i}`, file: false, cover: false })),
+        records: Array.from({ length: 9 }, (_, i) => ({ ...book, id: `select-${i + 1}`,
+            updated: i < 2 ? 20 : i < 6 ? 30 : 40, synced: i < 2 ? 20 : i < 6 ? 30 : 40 })),
+    });
+    await selective.cloud.start();
+    assert.equal(selective.calls.filter(call => call.type === 'download').length, 3);
+    assert.ok(selective.progress.every(value => value.total === 3));
+    assertProgress(selective, 3);
+    assert.equal(selective.values.get('leeslamp.cloud.pull.user-a'), '2026-09-15T10:00:00.000Z');
+
+    const unknownDeleted = fixture({ remote: [{ ...row, deleted: true, file: false, cover: false }] });
+    await unknownDeleted.cloud.start();
+    assert.deepEqual(unknownDeleted.progress, []);
+    assert.deepEqual(unknownDeleted.statuses, ['cloudSyncing', 'cloudSynced']);
+    assert.equal(unknownDeleted.calls.filter(call => call.type === 'download').length, 0);
+    assert.equal(unknownDeleted.values.get('leeslamp.cloud.pull.user-a'), '2026-09-15T10:00:00.000Z');
+    const knownDeleted = fixture({ records: [{ ...book, synced: 20 }],
+        remote: [{ ...row, updated: 20, deleted: true, file: false, cover: false }] });
+    await knownDeleted.cloud.start();
+    assertProgress(knownDeleted, 1);
+    assert.equal(knownDeleted.localBooks.size, 0);
+
+    const echo = fixture({ records: [book, { ...book, id: 'synced', synced: 20 },
+        { ...book, id: 'ahead', synced: 30 }] });
+    await echo.cloud.start();
+    assertProgress(echo, 1);
+    assert.deepEqual(echo.calls.filter(call => call.type === 'multipart' && call.metadata.name.startsWith('book-'))
+        .map(call => call.metadata.name), ['book-one.json']);
+    echo.calls.length = 0; echo.progress.length = 0;
+    await echo.cloud.sync();
+    assert.equal(echo.calls.filter(call => call.type === 'get' || call.type === 'download').length, 0);
+    assert.deepEqual(echo.progress, []);
+    assert.equal(echo.values.get('leeslamp.cloud.pull.user-a'), '2026-09-15T11:00:00.000Z');
+    const echoFile = [...echo.objects.values()].find(file => file.name === 'book-one.json');
+    echoFile.appProperties.updated = '30'; echoFile.data = { title: 'Newer remote' };
+    echoFile.modifiedTime = '2026-09-15T12:00:00.000Z';
+    await echo.cloud.sync();
+    assertProgress(echo, 1);
+    assert.equal(echo.localBooks.get('one').title, 'Newer remote');
+    echoFile.appProperties.updated = '20'; echoFile.modifiedTime = '2026-09-15T13:00:00.000Z';
+    echo.calls.length = 0; echo.progress.length = 0;
+    await echo.cloud.sync();
+    assert.equal(echo.calls.filter(call => call.type === 'get').length, 1, 'newer remote expires the pushed entry');
+    assert.deepEqual(echo.progress, []);
+    echo.localBooks.get('one').updated = 40;
+    await echo.cloud.sync(); // Repopulate the echo cache before ending the session.
+    await echo.cloud.signOut();
+    echo.calls.length = 0;
+    await echo.cloud.start();
+    assert.equal(echo.calls.filter(call => call.type === 'get').length, 1, 'new session reads local state');
+    console.log('PASS: 10 listed books count only 3 downloads; unknown tombstones and own echoes count zero; cursor advances, newer remote expires echoes; push excludes synced records.');
     const remote = Array.from({ length: 25 }, (_, i) => ({ ...row, id: `remote-${i}`, file: false }));
     for (const fail of [false, true]) {
         const f = fixture({ remote });
@@ -273,14 +326,14 @@ try {
         assert.equal([...f.localBooks.values()].filter(record => record.synced === 20).length, fail ? 11 : 12);
         assert.equal(f.calls.filter(call => call.type === 'folder').length, 1, 'parallel uploads share one folder');
         assert.equal(f.statuses.at(-1), fail ? 'cloudUnsynced' : 'cloudSynced');
-        assertProgress(f, 36); // Twelve JSON records, twelve covers, twelve book files.
+        assertProgress(f, 12); // Each record counts once, including its cover and book file.
     }
     const phases = fixture({ remote: remote.slice(0, 5), records: records.slice(0, 2) });
     await phases.cloud.start();
-    assertProgress(phases, 6);
+    assertProgress(phases, 2);
     assert.ok(phases.progress.some(value => value.done === 5 && value.total === 5));
     assert.equal(phases.statuses.at(-1), 'cloudSynced');
-    console.log('PASS: push peak 4 (resumable + covers + JSON), one folder, other records finish after failure; 36/36 counts; sequential phases finish at 5/5 then 6/6.');
+    console.log('PASS: push peak 4 (resumable + covers + JSON), one folder, other records finish after failure; 12/12 counts; sequential phases finish at 5/5 then 2/2.');
 
     const expectedWarnings = warnings.length;
     for (const tokenStatus of [501, 404, 405, 'network']) {
@@ -415,6 +468,7 @@ try {
     pending.values.set('leeslamp.cloud.tombstones', JSON.stringify([{ sub: 'user-a', id: 'one', updated: 40 }]));
     await pending.cloud.start();
     assert.equal(pending.localBooks.size, 0); assert.equal(pending.calls.filter(call => call.type === 'download').length, 0);
+    assert.deepEqual(pending.progress, [], 'pending local deletion excludes remote download from the count');
     await pending.cloud.signOut(); pending.cloud.remove({ id: 'offline' });
     assert.equal(JSON.parse(pending.values.get('leeslamp.cloud.tombstones'))[0].sub, 'user-a');
     await pending.cloud.start(); assert.deepEqual(JSON.parse(pending.values.get('leeslamp.cloud.tombstones')), []);

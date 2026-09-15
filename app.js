@@ -1239,7 +1239,7 @@ function updateImportControls() {
     const hasDirectoryPicker = typeof window.showDirectoryPicker === 'function';
     $('#find-books').hidden = !mobileImport.matches && hasDirectoryPicker;
     $('#link-folder').hidden = mobileImport.matches || !hasDirectoryPicker;
-    $('#folder-import').hidden = mobileImport.matches || hasDirectoryPicker || !('webkitdirectory' in $('#folder-input'));
+    $('#folder-import').hidden = (!mobileImport.matches && hasDirectoryPicker) || !('webkitdirectory' in $('#folder-input'));
 }
 mobileImport.addEventListener('change', updateImportControls);
 updateImportControls();
