@@ -84,9 +84,15 @@
     .account-details { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .account-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
     .account-status { font-size:10px; color:var(--mute); }
+    .account-progress { display:block; height:2px; background:var(--line); }
+    .account-progress[hidden] { display:none; }
+    .account-progress > span { display:block; height:100%; background:var(--accent); }
     .account-summary { display:flex; align-items:center; gap:8px; }
     .cloud-badge { position:absolute; right:8px; bottom:8px; padding:4px; background:var(--card); color:var(--accent); border:1px solid var(--line); border-radius:2px; }
     .cloud-badge .icon { width:16px; height:16px; }
+    .cloud-badge.downloading { animation:cloud-download 1s ease-in-out infinite; }
+    @keyframes cloud-download { 50% { opacity:.35; } }
+    @media (prefers-reduced-motion: reduce) { .cloud-badge.downloading { animation:none; } }
     .privacy-link { margin-left:auto; font-size:10px; color:var(--mute); text-decoration:none; align-self:center; }
     .privacy-link:hover { color:var(--accent); }
     #lang { margin-left:8px; display:flex; gap:5px; padding:4px; min-height:32px; border-radius:0; font-size:10px; }

@@ -16,6 +16,7 @@ const STRINGS = {
         signOut: 'Uitloggen',
         cloudSynced: 'Gesynchroniseerd',
         cloudSyncing: 'Synchroniseren…',
+        cloudSyncingCount: 'Synchroniseren… {done} / {total}',
         cloudOffline: 'Offline',
         cloudUnsynced: 'Niet gesynchroniseerd',
         cloudUpload: 'Uploaden naar cloud',
@@ -187,6 +188,7 @@ const STRINGS = {
         signOut: 'Sign out',
         cloudSynced: 'Synced',
         cloudSyncing: 'Syncing…',
+        cloudSyncingCount: 'Syncing… {done} / {total}',
         cloudOffline: 'Offline',
         cloudUnsynced: 'Not synced',
         cloudUpload: 'Upload to cloud',
@@ -366,6 +368,14 @@ const icon = name => {
 };
 let dbPromise, cloud = null;
 const localFiles = new Set();
+const downloadingBooks = new Map();
+function downloading(id, delta) {
+    const count = (downloadingBooks.get(id) || 0) + delta;
+    if (count) downloadingBooks.set(id, count); else downloadingBooks.delete(id);
+    for (const card of $('#grid').children) if (card.dataset.id === id) {
+        card.querySelector('.cloud-badge')?.classList.toggle('downloading', count > 0);
+    }
+}
 const database = () => dbPromise ??= new Promise((resolve, reject) => {
     const request = indexedDB.open('leeslamp', 2);
     request.onupgradeneeded = () => {
@@ -653,6 +663,7 @@ function renderLibrary() {
         if (cloud && book.cloudFile && !localFiles.has(book.id)
             && !(book.source.kind === 'fs' && roots.some(root => root.id === book.source.root))) {
             const badge = localize(el('span', 'cloud-badge'), 'cloudOnly', {}, 'aria-label');
+            badge.classList.toggle('downloading', downloadingBooks.has(book.id));
             badge.setAttribute('role', 'img'); badge.append(icon('cloud')); cover.append(badge);
         }
         const track = el('span', 'progress-track'), fill = el('span');
@@ -1379,7 +1390,11 @@ async function openBook(record) {
                 catch { /* A cached or cloud copy can still be available. */ }
             }
             file ||= (await get('files', record.id))?.file;
-            if (!file && cloud.signedIn && record.cloudFile) file = await cloud.download(record);
+            if (!file && cloud.signedIn && record.cloudFile) {
+                downloading(record.id, 1);
+                try { file = await cloud.download(record); }
+                finally { downloading(record.id, -1); }
+            }
         } else if (record.source.kind === 'fs') {
             const root = roots.find(root => root.id === record.source.root);
             if (!root || !await readPermission(root.handle)) throw new Error(t('readAccess'));
@@ -1873,6 +1888,8 @@ async function cloudChange(id, merge) {
         if (existing) {
             const pending = active?.record === existing && active.dirty
                 ? { fraction: existing.fraction, loc: existing.loc, opened: existing.opened, finished: existing.finished } : {};
+            // Keep the in-memory cover instance: a fresh IndexedDB read is a new Blob object and would churn the cover's object URL.
+            if (existing.cover && changed.cover) changed.cover = existing.cover;
             Object.assign(existing, changed, pending);
         } else books.push(changed);
     }
@@ -1881,13 +1898,25 @@ async function setupCloud() {
     const row = el('button', 'account-row'); row.id = 'account-button'; row.type = 'button';
     row.setAttribute('aria-haspopup', 'dialog');
     const summary = $('#account-summary');
-    let user = null, statusKey = 'cloudUnsynced';
+    let user = null, statusKey = 'cloudUnsynced', statusProgress;
+    function status(key, progress) {
+        statusKey = key; statusProgress = key === 'cloudSyncing' ? progress : undefined;
+        for (const container of [row, summary]) {
+            const text = container.querySelector('[role="status"]');
+            if (text) localize(text, statusProgress ? 'cloudSyncingCount' : key, statusProgress || {});
+            const track = container.querySelector('.account-progress');
+            if (track) {
+                track.hidden = !statusProgress;
+                track.firstElementChild.style.width = `${statusProgress?.total ? clamp(statusProgress.done / statusProgress.total) * 100 : 0}%`;
+            }
+        }
+    }
     function account(next) {
         user = next;
         row.replaceChildren();
         summary.replaceChildren();
         localize(row, user ? 'account' : 'signIn', {}, 'aria-label');
-        if (!user) { statusKey = 'cloudUnsynced'; row.append(icon('cloud'), localize(el('span'), 'signIn')); return; }
+        if (!user) { status('cloudUnsynced'); row.append(icon('cloud'), localize(el('span'), 'signIn')); return; }
         const name = user.name || user.email || t('account');
         const avatar = el('span', 'account-avatar', String(name).split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase());
         if (typeof user.picture === 'string' && /^https:\/\//i.test(user.picture)) {
@@ -1896,12 +1925,14 @@ async function setupCloud() {
         }
         const details = el('span', 'account-details');
         details.append(el('span', 'account-name', name));
-        const status = localize(el('span', 'account-status'), statusKey); status.setAttribute('role', 'status');
-        details.append(status); row.append(avatar, details);
+        const text = el('span', 'account-status'); text.setAttribute('role', 'status');
+        const track = el('span', 'account-progress'); track.setAttribute('aria-hidden', 'true'); track.append(el('span'));
+        details.append(text, track); row.append(avatar, details);
         const summaryAvatar = avatar.cloneNode(true);
         const summaryImage = summaryAvatar.querySelector('img');
         summaryImage?.addEventListener('error', () => summaryImage.remove(), { once: true });
         summary.append(summaryAvatar, details.cloneNode(true));
+        status(statusKey, statusProgress);
     }
     cloud = createCloud({
         all: () => all('books'), get: id => get('books', id), change: cloudChange,
@@ -1929,12 +1960,7 @@ async function setupCloud() {
         },
     }, {
         account,
-        status(key) {
-            statusKey = key;
-            for (const container of [row, summary]) {
-                const status = container.querySelector('[role="status"]'); if (status) localize(status, key);
-            }
-        },
+        status,
         toast: (key, params) => toast(() => t(key, params)),
         confirm() {
             const dialog = $('#cloud-switch-dialog'); dialog.returnValue = '';

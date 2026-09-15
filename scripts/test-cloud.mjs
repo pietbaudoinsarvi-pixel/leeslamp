@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
-import { createCloud, mergeRow, planPush, recordData } from '../sync.js';
+import { createCloud, mergeRow, planPush, pool, recordData } from '../sync.js';
 
 const source = { kind: 'fs', root: 'local-root', path: 'local.epub' };
 const cover = new Blob(['cover'], { type: 'image/jpeg' });
@@ -29,11 +29,27 @@ console.log('PASS: pure push selection, tombstones, insert/update/ignore, local 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 async function settled() { for (let i = 0; i < 40; i++) await tick(); }
+for (const fail of [false, true]) {
+    let active = 0, peak = 0;
+    const processed = [], items = Array.from({ length: 25 }, (_, i) => i);
+    const work = pool(items, 4, async item => {
+        peak = Math.max(peak, ++active);
+        try {
+            await tick(); processed.push(item);
+            if (fail && item === 0) throw new Error('Item failed');
+        } finally { active--; }
+    });
+    if (fail) await assert.rejects(work, AggregateError); else await work;
+    assert.equal(peak, 4); assert.equal(active, 0);
+    assert.deepEqual(processed.sort((a, b) => a - b), items);
+}
+console.log('PASS: pool processes all 25 items, peak concurrency 4, including an item failure.');
 function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm = true, tokenStatus = 200 } = {}) {
     const values = new Map(previous ? [['leeslamp.cloud.user', previous]] : []);
     const localBooks = new Map(records.map(record => [record.id, structuredClone(record)]));
     const files = new Map(records.filter(record => record.source?.kind === 'blob').map(record => [record.id, new Blob(['ebook'])]));
-    const objects = new Map(), calls = [], statuses = [], toasts = [], accounts = [];
+    const objects = new Map(), calls = [], statuses = [], progress = [], toasts = [], accounts = [];
+    let inFlight = 0, peak = 0;
     let sequence = 0, confirmCount = 0, intercept = async () => undefined;
     const add = (name, data, appProperties = {}, space = 'appDataFolder') => {
         const id = `drive-${++sequence}`;
@@ -125,6 +141,12 @@ function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm 
         }
         return json({ id: file.id });
     };
+    const fetch = globalThis.fetch;
+    globalThis.fetch = async (path, init) => {
+        const drive = new URL(path, 'https://reader.example').hostname === 'www.googleapis.com';
+        if (drive) peak = Math.max(peak, ++inFlight);
+        try { return await fetch(path, init); } finally { if (drive) inFlight--; }
+    };
     const local = {
         all: async () => structuredClone([...localBooks.values()]), get: async id => structuredClone(localBooks.get(id)),
         async change(id, merge) {
@@ -133,26 +155,107 @@ function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm 
             else if (next !== undefined) localBooks.set(id, structuredClone(next));
         },
         file: async id => files.get(id), saveFile: async (id, file, valid) => { if (valid()) files.set(id, file); },
-        flush: async () => {}, refresh: async () => {},
+        flush: async () => {}, refresh: async () => { calls.push({ type: 'refresh', size: localBooks.size, time: Date.now() }); },
         async wipe() { calls.push({ type: 'wipe' }); localBooks.clear(); files.clear(); },
     };
     let idle = Promise.resolve(), finish;
-    const cloud = createCloud(local, { account: user => accounts.push(user), status: key => {
+    const cloud = createCloud(local, { account: user => accounts.push(user), status: (key, params) => {
         statuses.push(key);
-        if (key === 'cloudSyncing') idle = new Promise(resolve => { finish = resolve; });
-        else finish?.();
+        if (params) progress.push({ key, ...params, time: Date.now() });
+        if (key === 'cloudSyncing') { if (!finish) idle = new Promise(resolve => { finish = resolve; }); }
+        else { finish?.(); finish = null; }
     },
         toast: key => toasts.push(key), confirm: async () => { confirmCount++; return confirm; } });
     const start = cloud.start;
     cloud.start = async () => { const enabled = await start(); await idle; await settled(); return enabled; };
-    return { cloud, localBooks, files, objects, values, calls, statuses, toasts, accounts, add,
+    return { cloud, localBooks, files, objects, values, calls, statuses, progress, toasts, accounts, add,
         intercept(fn) { intercept = fn; }, setTokenStatus(value) { tokenStatus = value; }, setUser(value) { uid = value; },
-        get confirmCount() { return confirmCount; } };
+        get confirmCount() { return confirmCount; }, get peak() { return peak; } };
 }
 
 const warnings = [], originalWarn = console.warn, originalFetch = globalThis.fetch;
 console.warn = (...args) => warnings.push(args);
 try {
+    const assertProgress = (f, total) => {
+        assert.ok(f.progress.length > 0);
+        assert.equal(f.progress.at(-1).done, total);
+        assert.equal(f.progress.at(-1).total, total);
+        for (const [i, value] of f.progress.entries()) {
+            assert.equal(value.key, 'cloudSyncing');
+            assert.ok(value.done >= 0 && value.done <= value.total);
+            if (i) assert.ok(value.time - f.progress[i - 1].time >= 100, 'progress throttled to 100 ms');
+        }
+    };
+    const remote = Array.from({ length: 25 }, (_, i) => ({ ...row, id: `remote-${i}`, file: false }));
+    for (const fail of [false, true]) {
+        const f = fixture({ remote });
+        f.intercept(async call => {
+            if (call.url.hostname !== 'www.googleapis.com') return;
+            await tick();
+            if (fail && call.url.searchParams.get('alt') === 'media'
+                && f.objects.get(call.url.pathname.split('/').at(-1))?.name === 'book-remote-0.json') return json({}, 400);
+        });
+        await f.cloud.start();
+        assert.equal(f.peak, 4, 'JSON and cover requests stay within four workers');
+        assert.equal(f.localBooks.size, fail ? 24 : 25);
+        assert.equal(f.calls.filter(call => call.type === 'download' && call.name.startsWith('cover-')).length, fail ? 24 : 25);
+        assert.ok(f.calls.some(call => call.type === 'refresh' && call.size >= 10 && call.size < 25), 'render before last merge');
+        assert.equal(f.statuses.at(-1), fail ? 'cloudUnsynced' : 'cloudSynced');
+        assert.equal(f.values.has('leeslamp.cloud.pull.user-a'), !fail);
+        assertProgress(f, 25);
+    }
+    const slow = fixture({ remote: remote.slice(0, 5).map(row => ({ ...row, cover: false })) });
+    const lastDownload = deferred();
+    slow.intercept(async call => {
+        if (call.url.searchParams.get('alt') === 'media'
+            && slow.objects.get(call.url.pathname.split('/').at(-1))?.name === 'book-remote-4.json') await lastDownload.promise;
+    });
+    const slowStart = slow.cloud.start();
+    try {
+        await new Promise(resolve => setTimeout(resolve, 600));
+        assert.equal(slow.localBooks.size, 4);
+        assert.ok(slow.calls.some(call => call.type === 'refresh' && call.size === 4), '500 ms timer renders fewer than ten while last download is held');
+    } finally { lastDownload.resolve(); await slowStart; }
+    assertProgress(slow, 5);
+    const cancelledPull = fixture({ remote });
+    const heldPull = deferred(); let downloads = 0;
+    cancelledPull.intercept(async call => {
+        if (call.url.searchParams.get('alt') === 'media') { downloads++; await heldPull.promise; }
+    });
+    const cancelledStart = cancelledPull.cloud.start(); await settled();
+    assert.equal(downloads, 4);
+    const progressBeforeSignOut = cancelledPull.progress.length;
+    const cancelledSignOut = cancelledPull.cloud.signOut(); heldPull.resolve();
+    await Promise.all([cancelledStart, cancelledSignOut]);
+    assert.equal(downloads, 4, 'queued workers cannot request after sign-out');
+    assert.equal(cancelledPull.localBooks.size, 0, 'in-flight pulls cannot merge after sign-out');
+    assert.equal(cancelledPull.progress.length, progressBeforeSignOut, 'no stale progress after sign-out');
+    console.log('PASS: pull peak 4 (JSON + covers); 10-record batches and 500 ms timer render before final merge; partial failure continues without cursor commit; counts finish at 25/25 and 5/5.');
+
+    const records = Array.from({ length: 12 }, (_, i) => ({ ...book, id: `local-${i}`, source: { kind: 'blob' } }));
+    for (const fail of [false, true]) {
+        const f = fixture({ records });
+        f.intercept(async call => {
+            if (call.url.hostname !== 'www.googleapis.com') return;
+            await tick();
+            if (fail && call.url.searchParams.get('uploadType') === 'resumable' && call.method === 'POST'
+                && JSON.parse(call.init.body).appProperties.leeslampId === 'local-0') return json({}, 400);
+        });
+        await f.cloud.start();
+        assert.equal(f.peak, 4, 'upload and lookup requests stay within four workers');
+        assert.equal([...f.localBooks.values()].filter(record => record.synced === 20).length, fail ? 11 : 12);
+        assert.equal(f.calls.filter(call => call.type === 'folder').length, 1, 'parallel uploads share one folder');
+        assert.equal(f.statuses.at(-1), fail ? 'cloudUnsynced' : 'cloudSynced');
+        assertProgress(f, 36); // Twelve JSON records, twelve covers, twelve book files.
+    }
+    const phases = fixture({ remote: remote.slice(0, 5), records: records.slice(0, 2) });
+    await phases.cloud.start();
+    assertProgress(phases, 6);
+    assert.ok(phases.progress.some(value => value.done === 5 && value.total === 5));
+    assert.equal(phases.statuses.at(-1), 'cloudSynced');
+    console.log('PASS: push peak 4 (resumable + covers + JSON), one folder, other records finish after failure; 36/36 counts; sequential phases finish at 5/5 then 6/6.');
+
+    const expectedWarnings = warnings.length;
     for (const tokenStatus of [501, 404, 405, 'network']) {
         const f = fixture({ tokenStatus });
         assert.equal(await f.cloud.start(), false);
@@ -160,7 +263,7 @@ try {
         assert.equal(f.calls.filter(call => call.type === 'http').length, 1);
         assert.deepEqual(f.accounts, []); assert.deepEqual(f.statuses, []);
     }
-    assert.equal(warnings.length, 0, 'static-server bootstrap is silent');
+    assert.equal(warnings.length, expectedWarnings, 'static-server bootstrap is silent');
     const signedOut = fixture({ tokenStatus: 401 });
     assert.equal(await signedOut.cloud.start(), true); assert.equal(signedOut.cloud.signedIn, false);
     assert.deepEqual(signedOut.accounts, [null]);
