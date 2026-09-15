@@ -85,7 +85,9 @@
     .account-status { font-size:10px; color:var(--mute); }
     .cloud-badge { position:absolute; right:8px; bottom:8px; padding:4px; background:var(--card); color:var(--accent); border:1px solid var(--line); border-radius:2px; }
     .cloud-badge .icon { width:16px; height:16px; }
-    #lang { margin-left:auto; display:flex; gap:5px; padding:4px; min-height:32px; border-radius:0; font-size:10px; }
+    .privacy-link { margin-left:auto; font-size:10px; color:var(--mute); text-decoration:none; align-self:center; }
+    .privacy-link:hover { color:var(--accent); }
+    #lang { margin-left:8px; display:flex; gap:5px; padding:4px; min-height:32px; border-radius:0; font-size:10px; }
     #lang .selected { color:var(--fg); box-shadow:0 1px currentColor; font-weight:700; }
     #empty p,#no-results p { white-space:pre-line; }
     #mode { margin-left:0; padding:6px; min-height:32px; }
@@ -319,7 +321,7 @@
         <button class="folder-button" id="link-folder" hidden data-i18n="linkFolder">Map koppelen</button>
         <button class="folder-button" id="folder-import" hidden data-i18n="importFolder">Map importeren</button>
         <button class="folder-button" id="rescan" hidden data-i18n="rescan">Opnieuw scannen</button>
-        <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span data-i18n="device">Op dit apparaat</span><button id="lang" type="button" data-i18n="" data-i18n-title="languageSwitch" data-i18n-aria-label="languageSwitch" aria-pressed="false"><span data-language="nl">NL</span><span aria-hidden="true">/</span><span data-language="en">EN</span></button><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem" data-i18n="" data-i18n-title="mode_auto" data-i18n-aria-label="mode_auto"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
+        <div class="device-note"><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg><span data-i18n="device">Op dit apparaat</span><a class="privacy-link" href="./privacy" target="_blank" rel="noopener" data-i18n="privacyPolicy">Privacyverklaring</a><button id="lang" type="button" data-i18n="" data-i18n-title="languageSwitch" data-i18n-aria-label="languageSwitch" aria-pressed="false"><span data-language="nl">NL</span><span aria-hidden="true">/</span><span data-language="en">EN</span></button><button id="mode" title="Weergave: systeem" aria-label="Weergave: systeem" data-i18n="" data-i18n-title="mode_auto" data-i18n-aria-label="mode_auto"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></button></div>
       </div>
     </aside>
     <main>
@@ -368,6 +370,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <h2 id="login-title" data-i18n="cloudTitle">Je bibliotheek overal</h2>
       <p data-i18n="cloudDescription">Je boeken en leesvoortgang worden veilig in je account bewaard.</p>
       <p class="cloud-hint" data-i18n="cloudSpaceHint">Tip: kies een Google-account met nog veel vrije ruimte voor je boeken.</p>
+      <p class="cloud-hint"><a href="./privacy" target="_blank" rel="noopener" data-i18n="privacyPolicy">Privacyverklaring</a></p>
       <button class="cloud-action" type="button" data-provider="google"><svg class="provider-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2.1H12v4h5.4a4.7 4.7 0 0 1-2 3.1 6 6 0 1 1 .1-10.4l3-3A10 10 0 1 0 22 12Z"/></svg><span data-i18n="continueGoogle">Doorgaan met Google</span></button>
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
     </form>

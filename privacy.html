@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Privacy · Leeslamp</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <style>
+    :root { --bg:#f3f3ef; --fg:#252b28; --mute:#58615b; --line:#d2d7cf; --accent:#925331; color-scheme:light; }
+    @media (prefers-color-scheme:dark) { :root { --bg:#171c19; --fg:#e5eae2; --mute:#a1ada3; --line:#343e36; --accent:#d4a080; color-scheme:dark; } }
+    body { margin:0; padding:48px 16px 64px; background:var(--bg); color:var(--fg); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",system-ui,sans-serif; }
+    main { max-width:680px; margin:0 auto; }
+    .eyebrow { font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+    h1 { font:500 28px/1.2 Georgia,serif; margin:8px 0 24px; }
+    h2 { font-size:16px; font-weight:600; margin:32px 0 8px; padding-top:16px; border-top:1px solid var(--line); }
+    p, li { margin:0 0 12px; } ul { padding-left:20px; }
+    a { color:var(--accent); }
+    .en { margin-top:48px; padding-top:24px; border-top:2px solid var(--line); }
+    .updated { color:var(--mute); font-size:13px; }
+  </style>
+</head>
+<body>
+<main>
+  <span class="eyebrow">Leeslamp</span>
+  <h1>Privacyverklaring</h1>
+  <p class="updated">Laatst bijgewerkt: 15 september 2026</p>
+  <p>Leeslamp is een ebooklezer die in je browser draait. Je boeken en leesvoortgang staan op je eigen apparaat en, als je inlogt, in je eigen Google Drive. Leeslamp heeft geen eigen database en bewaart geen kopie van je bibliotheek.</p>
+
+  <h2>Zonder account</h2>
+  <p>Alles blijft op je apparaat, in de opslag van je browser. Er wordt niets naar een server gestuurd, behalve de optionele automatische categorisering: daarvoor gaan alleen titel, auteur en onderwerpen van een boek naar Anthropic, nooit het boek zelf. Deze functie werkt alleen als de beheerder die heeft ingeschakeld.</p>
+
+  <h2>Met een Google-account</h2>
+  <p>Als je inlogt met Google, vraagt Leeslamp deze toegang:</p>
+  <ul>
+    <li><strong>Je naam, e-mailadres en profielfoto</strong>, alleen om ze in de app te tonen en om je bibliotheek van die van een ander account op hetzelfde apparaat te onderscheiden.</li>
+    <li><strong>Google Drive: bestanden die Leeslamp zelf aanmaakt</strong> (<code>drive.file</code>). Leeslamp maakt een map "Leeslamp" in je Drive voor je ebookbestanden. Andere bestanden in je Drive kan Leeslamp niet zien.</li>
+    <li><strong>Google Drive: verborgen appgegevens</strong> (<code>drive.appdata</code>). Hierin bewaart Leeslamp per boek een klein bestand met titel, auteur, categorie, leespositie en een verkleinde omslag.</li>
+  </ul>
+  <p>Deze gegevens staan uitsluitend in jouw Google Drive en tellen mee voor je eigen Drive-opslag. Leeslamp kopieert ze nergens anders heen.</p>
+
+  <h2>Wat de server doet</h2>
+  <p>Eén kleine serverfunctie regelt de Google-aanmelding. Die wisselt de aanmeldcode van Google om voor tokens en zet het vernieuwingstoken versleuteld in een cookie op jouw apparaat. De server slaat geen tokens, accounts of boekgegevens op en houdt daar geen logboek van. Uitloggen wist de cookie op dat apparaat.</p>
+
+  <h2>Toegang intrekken en gegevens verwijderen</h2>
+  <p>Je kunt Leeslamp op elk moment de toegang ontnemen via <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. De map "Leeslamp" verwijder je zelf in Drive; de verborgen appgegevens verwijder je in Drive via Instellingen → Beheer apps → Leeslamp → Verborgen appgegevens verwijderen.</p>
+
+  <h2>Contact</h2>
+  <p>Vragen over privacy: <a href="mailto:pietbaudoin9@gmail.com">pietbaudoin9@gmail.com</a>.</p>
+
+  <section class="en" lang="en">
+    <span class="eyebrow">Leeslamp</span>
+    <h1>Privacy policy</h1>
+    <p class="updated">Last updated: 15 September 2026</p>
+    <p>Leeslamp is an ebook reader that runs in your browser. Your books and reading progress live on your own device and, if you sign in, in your own Google Drive. Leeslamp has no database of its own and keeps no copy of your library.</p>
+    <h2>Without an account</h2>
+    <p>Everything stays on your device in browser storage. Nothing is sent to a server, except the optional automatic categorisation: only a book's title, author and subjects go to Anthropic, never the book itself, and only when the operator has enabled that feature.</p>
+    <h2>With a Google account</h2>
+    <ul>
+      <li><strong>Your name, email address and profile picture</strong>, shown in the app and used to tell your library apart from another account's on the same device.</li>
+      <li><strong>Google Drive files Leeslamp creates</strong> (<code>drive.file</code>): a "Leeslamp" folder in your Drive for your ebook files. Leeslamp cannot see any other files in your Drive.</li>
+      <li><strong>Google Drive hidden app data</strong> (<code>drive.appdata</code>): one small file per book with title, author, category, reading position and a small cover image.</li>
+    </ul>
+    <p>This data lives only in your Google Drive and counts towards your own Drive storage. Leeslamp copies it nowhere else.</p>
+    <h2>What the server does</h2>
+    <p>One small server function handles Google sign-in: it exchanges Google's sign-in code for tokens and stores the refresh token, encrypted, in a cookie on your device. The server stores no tokens, accounts or book data and keeps no log of them. Signing out clears the cookie on that device.</p>
+    <h2>Revoking access and deleting data</h2>
+    <p>Revoke Leeslamp's access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Delete the "Leeslamp" folder in Drive yourself; delete the hidden app data in Drive under Settings → Manage apps → Leeslamp → Delete hidden app data.</p>
+    <h2>Contact</h2>
+    <p><a href="mailto:pietbaudoin9@gmail.com">pietbaudoin9@gmail.com</a></p>
+  </section>
+</main>
+</body>
+</html>

@@ -1,1 +1,1 @@
-{ "trailingSlash": false, "functions": { "api/categorize.js": { "maxDuration": 25 }, "api/auth/[action].js": { "maxDuration": 10 } }, "rewrites": [ { "source": "/en", "destination": "/index.html" } ] }
+{"trailingSlash": false, "functions": {"api/categorize.js": {"maxDuration": 25}, "api/auth/[action].js": {"maxDuration": 10}}, "rewrites": [{"source": "/en", "destination": "/index.html"}, {"source": "/privacy", "destination": "/privacy.html"}]}

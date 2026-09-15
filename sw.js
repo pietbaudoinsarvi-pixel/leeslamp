@@ -6,7 +6,7 @@ const VENDOR = [
     'text-walker.js', 'footnotes.js', 'ui/tree.js', 'vendor/zip.js', 'vendor/fflate.js',
 ];
 const SHELL = ['./', './index.html', './app.js', './autocat.js', './sw.js', './version.js', './manifest.json', './icon.svg',
-    './sync.js',
+    './sync.js', './privacy.html',
     ...VENDOR.map(file => `./vendor/foliate-js/${file}`)];
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
