@@ -84,6 +84,7 @@
     .account-details { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .account-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
     .account-status { font-size:10px; color:var(--mute); }
+    .account-summary { display:flex; align-items:center; gap:8px; }
     .cloud-badge { position:absolute; right:8px; bottom:8px; padding:4px; background:var(--card); color:var(--accent); border:1px solid var(--line); border-radius:2px; }
     .cloud-badge .icon { width:16px; height:16px; }
     .privacy-link { margin-left:auto; font-size:10px; color:var(--mute); text-decoration:none; align-self:center; }
@@ -250,23 +251,28 @@
     @media (max-width:1100px) { #sidebar { width:192px; } .library-tools { width:100%; } .search-field { flex:1; } #search { width:100%; } #grid { gap:28px 20px; } }
     @media (max-width:760px) {
       #library { flex-direction:column; }
-      #sidebar { width:100%; padding:16px 20px 0; display:grid; grid-template-columns:1fr auto; border-right:0; border-bottom:1px solid var(--line); }
-      .brand { padding:0; font-size:16px; gap:8px; }
+      #sidebar { width:100%; padding:16px 16px 0; display:grid; grid-template-columns:1fr 1fr; gap:8px; border-right:0; border-bottom:1px solid var(--line); }
+      .brand { grid-column:1; grid-row:1; margin-bottom:4px; padding:0; font-size:16px; gap:8px; }
       .brand svg { width:22px; height:28px; }
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
-      .sidebar-bottom { grid-column:1/-1; grid-row:2; flex-direction:row; flex-wrap:wrap; padding:12px 0 0; margin:0; border:0; gap:8px; }
-      .sidebar-bottom .import { width:auto; padding:8px 10px; gap:8px; font-size:11px; }
-      .find-books-hint { display:block; flex-basis:100%; order:1; }
+      .sidebar-bottom { display:contents; }
+      .sidebar-bottom > button { order:1; width:100%; min-width:0; height:40px; padding:0 12px; font-size:12px; text-align:center; }
+      .sidebar-bottom .import { justify-content:center; gap:8px; border:1px solid var(--fg); }
+      .sidebar-bottom .import:hover { border-color:var(--accent); }
+      .find-books-hint,.device-note .privacy-link,#account-button > span:not(.account-avatar),.heading .eyebrow,.library-meta > span:last-child,#empty [data-i18n="emptyDrag"],#empty p > br,#empty .formats { display:none; }
       main { min-height:0; }
       #sidebar,#filters { min-width:0; }
-      .device-note { padding:0; }
-      #filters { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:16px 0 10px; overflow-x:auto; }
+      .device-note { grid-column:2; grid-row:1; justify-self:end; flex-wrap:nowrap; gap:8px; margin-bottom:4px; padding:0; }
+      #account-button,#mode,#lang { display:flex; align-items:center; justify-content:center; flex:0 0 36px; width:36px; height:36px; min-height:36px; margin:0; padding:0; }
+      #account-button .account-avatar { width:28px; height:28px; }
+      #mode { order:1; }
+      #lang { order:2; gap:2px; }
+      #filters { grid-column:1/-1; order:2; display:flex; align-items:center; gap:8px; padding:4px 0 10px; overflow-x:auto; }
       #filters button { flex-shrink:0; width:auto; font-size:11px; padding:6px 10px; margin:0; min-height:32px; }
       #filters button[aria-current]::before { top:auto; bottom:0; left:10px; right:10px; width:auto; height:2px; }
       #filters .section-label { padding:0 4px 0 12px; }
       .library-content { padding:24px 20px 40px; }
       .library-header { gap:20px; padding-bottom:20px; }
-      .heading .eyebrow { margin-bottom:8px; }
       .heading h1 { font-size:30px; }
       .library-tools { gap:12px; }
       #grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px 20px; }
@@ -335,8 +341,7 @@
         <div id="grid"></div>
         <div id="empty" hidden>
           <svg class="empty-mark" viewBox="0 0 120 132" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M20 8h80v112H20zM26 8v112M36 100h48M36 105h28M9 120h102"/><path d="M50 32h20l10 25H40l10-25Zm10 25v25M47 83h26" stroke-width="1.5"/><path d="M44 64h4m24 0h4M56 90h8"/></svg>
-          <h2 data-i18n="emptyTitle">Ruimte voor je volgende boek.</h2><p data-i18n="emptyText">Sleep je boeken hierheen.
-Je bibliotheek begint met één goed verhaal.</p>
+          <h2 data-i18n="emptyTitle">Ruimte voor je volgende boek.</h2><p><span data-i18n="emptyDrag">Sleep je boeken hierheen.</span><br><span data-i18n="emptyText">Je bibliotheek begint met één goed verhaal.</span></p>
           <button class="import" id="empty-import"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span data-i18n="addBooks">Boeken toevoegen</span></button>
           <p class="formats">EPUB · MOBI · AZW · AZW3 · PRC · FB2 · FBZ · CBZ<br>PDF · TXT · MD · HTML · DOCX</p>
         </div>
@@ -379,6 +384,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
   <dialog id="account-dialog" class="cloud-dialog" aria-labelledby="account-title">
     <form method="dialog">
       <h2 id="account-title" data-i18n="account">Account</h2>
+      <p id="account-summary" class="account-summary"></p>
       <button id="cloud-sync" class="cloud-action" type="button" data-i18n="syncNow">Nu synchroniseren</button>
       <button id="cloud-signout" class="cloud-action" type="button" data-i18n="signOut">Uitloggen</button>
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>

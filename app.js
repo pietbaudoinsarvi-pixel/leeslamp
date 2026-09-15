@@ -60,7 +60,8 @@ const STRINGS = {
         author: 'Auteur',
         added: 'Toegevoegd',
         emptyTitle: 'Ruimte voor je volgende boek.',
-        emptyText: 'Sleep je boeken hierheen.\nJe bibliotheek begint met één goed verhaal.',
+        emptyDrag: 'Sleep je boeken hierheen.',
+        emptyText: 'Je bibliotheek begint met één goed verhaal.',
         addBooks: 'Boeken toevoegen',
         noResultsTitle: 'Even verder zoeken.',
         noResultsText: 'Geen boeken in deze selectie.\nProbeer een andere titel, auteur of filter.',
@@ -230,7 +231,8 @@ const STRINGS = {
         author: 'Author',
         added: 'Date added',
         emptyTitle: 'Make room for your next read.',
-        emptyText: 'Drop your books here.\nOne good story is all it takes to begin.',
+        emptyDrag: 'Drop your books here.',
+        emptyText: 'One good story is all it takes to begin.',
         addBooks: 'Add books',
         noResultsTitle: 'Keep looking.',
         noResultsText: 'No books match this selection.\nTry another title, author or filter.',
@@ -1878,10 +1880,13 @@ async function cloudChange(id, merge) {
 async function setupCloud() {
     const row = el('button', 'account-row'); row.id = 'account-button'; row.type = 'button';
     row.setAttribute('aria-haspopup', 'dialog');
+    const summary = $('#account-summary');
     let user = null, statusKey = 'cloudUnsynced';
     function account(next) {
         user = next;
         row.replaceChildren();
+        summary.replaceChildren();
+        localize(row, user ? 'account' : 'signIn', {}, 'aria-label');
         if (!user) { statusKey = 'cloudUnsynced'; row.append(icon('cloud'), localize(el('span'), 'signIn')); return; }
         const name = user.name || user.email || t('account');
         const avatar = el('span', 'account-avatar', String(name).split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase());
@@ -1893,6 +1898,10 @@ async function setupCloud() {
         details.append(el('span', 'account-name', name));
         const status = localize(el('span', 'account-status'), statusKey); status.setAttribute('role', 'status');
         details.append(status); row.append(avatar, details);
+        const summaryAvatar = avatar.cloneNode(true);
+        const summaryImage = summaryAvatar.querySelector('img');
+        summaryImage?.addEventListener('error', () => summaryImage.remove(), { once: true });
+        summary.append(summaryAvatar, details.cloneNode(true));
     }
     cloud = createCloud({
         all: () => all('books'), get: id => get('books', id), change: cloudChange,
@@ -1920,7 +1929,12 @@ async function setupCloud() {
         },
     }, {
         account,
-        status(key) { statusKey = key; const status = row.querySelector('[role="status"]'); if (status) localize(status, key); },
+        status(key) {
+            statusKey = key;
+            for (const container of [row, summary]) {
+                const status = container.querySelector('[role="status"]'); if (status) localize(status, key);
+            }
+        },
         toast: (key, params) => toast(() => t(key, params)),
         confirm() {
             const dialog = $('#cloud-switch-dialog'); dialog.returnValue = '';
