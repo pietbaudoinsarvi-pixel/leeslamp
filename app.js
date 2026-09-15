@@ -1,9 +1,27 @@
 import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
+import { createCloud } from './sync.js';
 
 const STRINGS = {
     nl: {
+        account: 'Account',
+        signIn: 'Inloggen',
+        cloudTitle: 'Je bibliotheek overal',
+        cloudDescription: 'Je boeken en leesvoortgang worden veilig in je account bewaard.',
+        continueGoogle: 'Doorgaan met Google',
+        syncNow: 'Nu synchroniseren',
+        signOut: 'Uitloggen',
+        cloudSynced: 'Gesynchroniseerd',
+        cloudSyncing: 'Synchroniseren…',
+        cloudOffline: 'Offline',
+        cloudUnsynced: 'Niet gesynchroniseerd',
+        cloudUpload: 'Uploaden naar cloud',
+        cloudOnly: 'Alleen in de cloud',
+        cloudFailed: 'Synchroniseren is mislukt. Probeer het opnieuw.',
+        cloudFileTooLarge: '{name}: groter dan 50 MB. Het bestand wordt niet naar de cloud geüpload.',
+        cloudSwitch: 'Dit apparaat bevat de bibliotheek van een ander account. Lokale boeken wissen en die van dit account laden?',
+        cloudSwitchConfirm: 'Wissen en laden',
         updateAvailable: 'Nieuwe versie beschikbaar',
         refreshApp: 'Vernieuwen',
         updateLater: 'Later',
@@ -156,6 +174,23 @@ const STRINGS = {
         libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
     },
     en: {
+        account: 'Account',
+        signIn: 'Sign in',
+        cloudTitle: 'Your library everywhere',
+        cloudDescription: 'Your books and reading progress are safely stored in your account.',
+        continueGoogle: 'Continue with Google',
+        syncNow: 'Sync now',
+        signOut: 'Sign out',
+        cloudSynced: 'Synced',
+        cloudSyncing: 'Syncing…',
+        cloudOffline: 'Offline',
+        cloudUnsynced: 'Not synced',
+        cloudUpload: 'Upload to cloud',
+        cloudOnly: 'Only in the cloud',
+        cloudFailed: 'Sync failed. Please try again.',
+        cloudFileTooLarge: '{name}: larger than 50 MB. The file will not be uploaded to the cloud.',
+        cloudSwitch: 'This device contains the library of another account. Clear local books and load those of this account?',
+        cloudSwitchConfirm: 'Clear and load',
         updateAvailable: 'New version available',
         refreshApp: 'Refresh',
         updateLater: 'Later',
@@ -325,7 +360,8 @@ const icon = name => {
     use.setAttribute('href', `#i-${name}`); svg.append(use);
     return svg;
 };
-let dbPromise;
+let dbPromise, cloud = null;
+const localFiles = new Set();
 const database = () => dbPromise ??= new Promise((resolve, reject) => {
     const request = indexedDB.open('leeslamp', 2);
     request.onupgradeneeded = () => {
@@ -351,13 +387,19 @@ const tx = async (store, mode, fn) => {
         catch (error) { transaction.abort(); reject(error); }
     });
 };
-const put = (store, obj) => tx(store, 'readwrite', s => s.put(obj));
+const put = async (store, obj) => {
+    if (store === 'books') obj.updated = Date.now();
+    const result = await tx(store, 'readwrite', s => s.put(obj));
+    if (store === 'books') cloud?.changed();
+    return result;
+};
 const get = (store, id) => tx(store, 'readonly', s => s.get(id));
 const all = store => tx(store, 'readonly', s => s.getAll());
 // Import/delete are atomic across both stores, including quota failures.
 const bookTransaction = async (record, file, remove = false) => {
+    record.updated = Date.now();
     const db = await database();
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
         const transaction = db.transaction(['files', 'books'], 'readwrite');
         transaction.oncomplete = resolve;
         transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
@@ -369,6 +411,9 @@ const bookTransaction = async (record, file, remove = false) => {
             transaction.objectStore('books').put(record);
         }
     });
+    if (remove) { localFiles.delete(record.id); cloud?.remove(record); }
+    else localFiles.add(record.id);
+    cloud?.changed();
 };
 const readSetting = (key, fallback) => {
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
@@ -601,6 +646,11 @@ function renderLibrary() {
             cover.append(placeholder);
         }
         open.append(cover);
+        if (cloud && book.cloudFile && !localFiles.has(book.id)
+            && !(book.source.kind === 'fs' && roots.some(root => root.id === book.source.root))) {
+            const badge = localize(el('span', 'cloud-badge'), 'cloudOnly', {}, 'aria-label');
+            badge.setAttribute('role', 'img'); badge.append(icon('cloud')); cover.append(badge);
+        }
         const track = el('span', 'progress-track'), fill = el('span');
         track.setAttribute('aria-hidden', 'true');
         fill.style.setProperty('--fraction', clamp(book.fraction));
@@ -663,6 +713,16 @@ $('#grid').addEventListener('click', async e => {
         if (importing) return;
         const action = await chooseBookAction(record);
         if (!action || importing) return;
+        if (action === 'cloudUpload') {
+            try {
+                const root = roots.find(root => root.id === record.source.root);
+                let file = (await get('files', record.id))?.file;
+                if (root && await readPermission(root.handle)) file = await resolveFile(root, record.source.path);
+                if (!file) throw new Error(t('fileStorageMissing'));
+                await cloud.upload(record, file);
+            } catch { toast(() => t('cloudFailed')); }
+            return;
+        }
         if (action !== 'category') {
             const changes = action === 'removeRecent' ? { opened: null }
                 : action === 'markFinished' ? { finished: true }
@@ -706,6 +766,7 @@ function chooseBookAction(record) {
     if (dialog.open) return Promise.resolve('');
     localize($('#book-actions-title'), 'bookActions', { title: record.title });
     localize($('#book-action-category'), 'changeCategory', { title: record.title });
+    $('#book-action-upload').hidden = !(cloud?.signedIn && record.source.kind === 'fs' && !record.cloudFile && !record.fileSynced && !record.fileSkipped);
     const finished = record.finished === true;
     const recentButton = $('#book-actions [value="removeRecent"]');
     if (recentButton) recentButton.hidden = !record.opened;
@@ -724,9 +785,7 @@ $('#clear-recent').addEventListener('click', async () => {
     if (!confirm(t('confirmClearRecent'))) return;
     $('#clear-recent').disabled = true;
     try {
-        await tx('books', 'readwrite', store => {
-            for (const record of records) store.put({ ...record, opened: null });
-        });
+        await writeBookBatch(records.map(record => ({ ...record, opened: null })));
         for (const record of records) record.opened = null;
     } catch (error) { report(() => t('progressFailed'), error); }
     renderLibrary();
@@ -984,10 +1043,15 @@ async function enumerate(directory, entries, prefix = '', category = '') {
         if (++visited % 50 === 0) await yieldUI();
     }
 }
-const writeBookBatch = (records, removed = []) => tx('books', 'readwrite', store => {
-    for (const record of records) store.put(record);
-    for (const record of removed) store.delete(record.id);
-});
+const writeBookBatch = async (records, removed = []) => {
+    for (const record of records) record.updated = Date.now();
+    await tx('books', 'readwrite', store => {
+        for (const record of records) store.put(record);
+        for (const record of removed) store.delete(record.id);
+    });
+    for (const record of removed) cloud?.remove(record);
+    cloud?.changed();
+};
 async function scanRoots(selected) {
     const work = [], failures = [];
     let found = 0, added = 0, lastRender = 0;
@@ -1172,6 +1236,7 @@ function frame(session, callback) {
 }
 function saveProgress(session, final = false) {
     clearTimeout(session.saveTimer);
+    if (session.deleted) return session.writes;
     if (!session.dirty && !final) return session.writes;
     const remaining = 1000 - (Date.now() - session.lastSave);
     if (!final && remaining > 0) {
@@ -1184,10 +1249,12 @@ function saveProgress(session, final = false) {
         const request = store.get(session.record.id);
         request.onsuccess = () => {
             const current = request.result || session.record;
-            store.put({ ...current, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened, finished: session.record.finished });
+            if (cloud && !request.result) return;
+            session.record.updated = Date.now();
+            store.put({ ...current, updated: session.record.updated, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened, finished: session.record.finished });
         };
         return request;
-    })).catch(error => {
+    })).then(() => cloud?.changed()).catch(error => {
         session.dirty = true;
         report(() => t('progressFailed'), error);
     });
@@ -1301,7 +1368,15 @@ async function openBook(record) {
     let resolvingFile = true;
     try {
         let file;
-        if (record.source.kind === 'fs') {
+        if (cloud) {
+            const root = record.source.kind === 'fs' && roots.find(root => root.id === record.source.root);
+            if (root) {
+                try { if (await readPermission(root.handle)) file = await resolveFile(root, record.source.path); }
+                catch { /* A cached or cloud copy can still be available. */ }
+            }
+            file ||= (await get('files', record.id))?.file;
+            if (!file && cloud.signedIn && record.cloudFile) file = await cloud.download(record);
+        } else if (record.source.kind === 'fs') {
             const root = roots.find(root => root.id === record.source.root);
             if (!root || !await readPermission(root.handle)) throw new Error(t('readAccess'));
             file = await resolveFile(root, record.source.path);
@@ -1769,6 +1844,110 @@ $('#justify').addEventListener('change', e => {
     prefs.justify = e.target.checked; writeSetting('leeslamp.prefs', JSON.stringify(prefs)); applyPreferences('justify');
 });
 
+// Cloud writes use an atomic read/merge and never call the mutation helpers above.
+async function cloudChange(id, merge) {
+    const db = await database();
+    let changed;
+    await new Promise((resolve, reject) => {
+        const transaction = db.transaction(['books', 'files'], 'readwrite');
+        transaction.oncomplete = resolve;
+        transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error(t('storageFailed')));
+        const store = transaction.objectStore('books'), request = store.get(id);
+        request.onsuccess = () => {
+            try {
+                changed = merge(request.result);
+                if (changed === null) { store.delete(id); transaction.objectStore('files').delete(id); }
+                else if (changed !== undefined) store.put(changed);
+            } catch (error) { transaction.abort(); reject(error); }
+        };
+    });
+    if (changed === null) {
+        books = books.filter(book => book.id !== id); localFiles.delete(id); presentedBooks.delete(id);
+        if (active?.record.id === id) active.deleted = true;
+    } else if (changed) {
+        const existing = books.find(book => book.id === id);
+        if (existing) {
+            const pending = active?.record === existing && active.dirty
+                ? { fraction: existing.fraction, loc: existing.loc, opened: existing.opened, finished: existing.finished } : {};
+            Object.assign(existing, changed, pending);
+        } else books.push(changed);
+    }
+}
+async function setupCloud() {
+    if (!window.LEESLAMP_CLOUD?.url || !window.LEESLAMP_CLOUD?.anonKey) return;
+    const row = el('button', 'account-row'); row.id = 'account-button'; row.type = 'button';
+    row.setAttribute('aria-haspopup', 'dialog');
+    let user = null, statusKey = 'cloudUnsynced';
+    function account(next) {
+        user = next;
+        row.replaceChildren();
+        if (!user) { statusKey = 'cloudUnsynced'; row.append(icon('cloud'), localize(el('span'), 'signIn')); return; }
+        const metadata = user.user_metadata || {};
+        const name = metadata.full_name || metadata.name || user.email || t('account');
+        const avatar = el('span', 'account-avatar', String(name).split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase());
+        if (typeof metadata.avatar_url === 'string' && /^https:\/\//i.test(metadata.avatar_url)) {
+            const image = el('img'); image.src = metadata.avatar_url; image.alt = ''; image.referrerPolicy = 'no-referrer';
+            image.addEventListener('error', () => image.remove(), { once: true }); avatar.append(image);
+        }
+        const details = el('span', 'account-details');
+        details.append(el('span', 'account-name', name));
+        const status = localize(el('span', 'account-status'), statusKey); status.setAttribute('role', 'status');
+        details.append(status); row.append(avatar, details);
+    }
+    cloud = createCloud(window.LEESLAMP_CLOUD, {
+        all: () => all('books'), get: id => get('books', id), change: cloudChange,
+        file: async id => (await get('files', id))?.file,
+        async saveFile(id, file, valid) {
+            await tx('files', 'readwrite', store => { if (valid()) return store.put({ id, file }); });
+            if (valid()) { localFiles.add(id); renderLibrary(); }
+        },
+        async flush() { if (active?.dirty) await saveProgress(active, true); },
+        async refresh() { renderLibrary(); },
+        async wipe() {
+            while (importing) await new Promise(resolve => setTimeout(resolve, 100));
+            setImporting(true);
+            try {
+                if (active) await closeBook();
+                const db = await database();
+                await new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['books', 'files', 'roots'], 'readwrite');
+                    transaction.oncomplete = resolve;
+                    transaction.onerror = transaction.onabort = () => reject(transaction.error);
+                    for (const store of ['books', 'files', 'roots']) transaction.objectStore(store).clear();
+                });
+                books = []; roots = []; localFiles.clear(); presentedBooks.clear(); renderLibrary();
+            } finally { setImporting(false); }
+        },
+    }, {
+        account,
+        status(key) { statusKey = key; const status = row.querySelector('[role="status"]'); if (status) localize(status, key); },
+        toast: (key, params) => toast(() => t(key, params)),
+        confirm() {
+            const dialog = $('#cloud-switch-dialog'); dialog.returnValue = '';
+            return new Promise(resolve => {
+                dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+                dialog.showModal();
+            });
+        },
+    });
+    for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
+    const note = $('.device-note');
+    note.querySelector(':scope > .icon').remove(); note.querySelector(':scope > span').remove();
+    note.prepend(row); account(null);
+    row.addEventListener('click', () => {
+        const dialog = $(user ? '#account-dialog' : '#login-dialog');
+        if (!dialog.open) dialog.showModal();
+    });
+    for (const button of document.querySelectorAll('[data-provider]')) button.addEventListener('click', async () => {
+        const buttons = document.querySelectorAll('[data-provider]');
+        for (const item of buttons) item.disabled = true;
+        if (!await cloud.signIn(button.dataset.provider)) for (const item of buttons) item.disabled = false;
+    });
+    $('#cloud-sync').addEventListener('click', () => { $('#account-dialog').close(); void cloud.sync(true); });
+    $('#cloud-signout').addEventListener('click', () => { $('#account-dialog').close(); void cloud.signOut(); });
+    await cloud.start();
+}
+
 applyLanguage(); syncPreferences();
 try {
     books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
@@ -1776,6 +1955,7 @@ try {
     setImporting(false); renderLibrary();
 }
 catch (error) { report(() => t('libraryFailed'), error); }
+setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
 window.__leeslamp = { linkFolder, rescan };
 async function registerServiceWorker() {
     if (!navigator.serviceWorker) return;

@@ -64,3 +64,21 @@ Een webapp kan niet zelfstandig de opslag van je telefoon doorzoeken. Android- e
 ## Taal / Language
 Gebruik NL / EN onderaan de zijbalk om direct van taal te wisselen; je boek en leespositie blijven behouden. `/en` opent altijd Engels. Op `/` geldt je opgeslagen voorkeur (`leeslamp.lang`), anders Nederlands bij een Nederlandse browsertaal en Engels bij elke andere browsertaal. De switch past ook de URL aan en bewaart queryparameters. Vercel ondersteunt `/en` via `vercel.json`; een lokale server moet dezelfde route naar `index.html` sturen.
 Use NL / EN in the sidebar to switch instantly. Share `/en` for English; `/` uses your saved preference or browser language. Your books, categories and reading position stay as they are.
+
+## Cloud en accounts
+Met een Google-account neem je je bibliotheek en leesvoortgang mee naar een ander apparaat. Titels, omslagen, categorieën en de gelezenmarkering gaan mee. Zonder ingevulde cloudconfiguratie blijft Leeslamp lokaal werken, met Op dit apparaat onderaan de zijbalk.
+
+Inloggen voegt de lokale bibliotheek samen met je account. Geïmporteerde bestanden worden automatisch geüpload. Gekoppelde mappen blijven op dit apparaat; kies bij een boek via ⋯ voor Uploaden naar cloud om het bestand ook elders te kunnen lezen. Bestanden groter dan 50 MB worden eenmaal gemeld en daarna overgeslagen. Een wolkje op een omslag betekent dat het bestand alleen in de cloud staat. Openen downloadt het bestand en bewaart het voor offline lezen.
+
+Wijzigingen worden eerst opgehaald en daarna verstuurd. De nieuwste wijziging per boek geldt, ook voor de leespositie. Bij een verbroken verbinding blijft lezen werken; Leeslamp probeert opnieuw bij een volgende wijziging, bij terugkeer naar de app of zodra de verbinding terugkomt. Via je account kun je ook Nu synchroniseren kiezen. Uitloggen bewaart lokale boeken en bestanden. Bij inloggen met een ander account vraagt Leeslamp eerst of de lokale bibliotheek mag worden gewist. Annuleren logt dat account meteen uit. Leesvoorkeuren, taal, thema en maptoegang blijven apparaatgebonden.
+
+Cloud instellen:
+
+1. Maak een Supabase-project aan.
+2. Voer `supabase/schema.sql` uit in de SQL editor. Dit maakt de boekentabel, de private opslagbucket en de toegangsregels per account aan. Het script kan opnieuw worden uitgevoerd.
+3. Schakel onder Authentication de provider Google in en vul de OAuth client-ID en secret in uit de Google Cloud Console. Gebruik daar de callback-URL die Supabase toont.
+4. Stel bij Authentication > URL Configuration de Site URL in op `https://<vercel-domain>/`. Voeg bij Redirect URLs `https://<vercel-domain>/`, `https://<vercel-domain>/en` en `http://localhost:*` toe.
+5. Plak de project-URL en de publieke anon key in `config.js`, bij `url` en `anonKey`. Gebruik hier nooit een service-role key. De anon key is openbaar; de SQL-toegangsregels beschermen de boeken en bestanden.
+6. Deploy de statische site volgens Deployen hierboven. Er is geen extra server of buildstap nodig voor cloudaccounts.
+
+Sign in with Google to sync your library and reading progress across devices; downloaded books remain available offline.

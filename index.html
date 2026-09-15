@@ -77,6 +77,14 @@
     .device-note > .icon { width:14px; height:14px; }
     .device-note { flex-wrap:wrap; }
     .device-note > span { flex:1; min-width:calc(100% - 20px); }
+    .account-row { display:flex; align-items:center; gap:8px; width:100%; padding:8px 0; text-align:left; min-width:0; }
+    .account-avatar { position:relative; display:grid; place-items:center; flex-shrink:0; width:32px; height:32px; border-radius:2px; background:var(--hover); color:var(--accent); overflow:hidden; }
+    .account-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .account-details { display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .account-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+    .account-status { font-size:10px; color:var(--mute); }
+    .cloud-badge { position:absolute; right:8px; bottom:8px; padding:4px; background:var(--card); color:var(--accent); border:1px solid var(--line); border-radius:2px; }
+    .cloud-badge .icon { width:16px; height:16px; }
     #lang { margin-left:auto; display:flex; gap:5px; padding:4px; min-height:32px; border-radius:0; font-size:10px; }
     #lang .selected { color:var(--fg); box-shadow:0 1px currentColor; font-weight:700; }
     #empty p,#no-results p { white-space:pre-line; }
@@ -125,6 +133,14 @@
     #category-dialog,#book-actions { width:min(360px,calc(100% - 32px)); padding:24px; border:1px solid var(--line); border-radius:2px; background:var(--bg); color:var(--fg); box-shadow:var(--shadow); }
     #category-dialog::backdrop,#book-actions::backdrop { background:#18251c66; }
     #category-dialog h2,#book-actions h2 { margin:0 0 20px; font-size:20px; font-weight:500; overflow-wrap:anywhere; }
+    .cloud-dialog { width:min(360px,calc(100% - 32px)); padding:24px; border:1px solid var(--line); border-radius:2px; background:var(--bg); color:var(--fg); box-shadow:var(--shadow); }
+    .cloud-dialog::backdrop { background:#18251c66; }
+    .cloud-dialog h2 { margin:8px 0 16px; font-size:20px; font-weight:500; }
+    .cloud-dialog p { margin:0 0 24px; font-size:13px; line-height:1.6; }
+    .cloud-dialog .cloud-action { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:12px; margin-bottom:8px; border:1px solid var(--line); background:var(--card); }
+    .cloud-dialog .cloud-action:hover { color:var(--accent); }
+    .cloud-dialog .provider-mark { width:20px; height:20px; fill:currentColor; }
+    .cloud-dialog .dialog-actions { margin-top:16px; }
     #book-actions form > button { display:block; width:100%; padding:12px 0; text-align:left; border-top:1px solid var(--line); border-radius:0; }
     #category-dialog label { display:block; font-size:12px; }
     #category-dialog select,#category-dialog input { width:100%; margin:8px 0 20px; padding:8px; background:var(--card); border:1px solid var(--line); border-radius:2px; }
@@ -288,6 +304,7 @@
     <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v2m0 18v2M1 12h2m18 0h2M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></symbol>
     <symbol id="i-dark" viewBox="0 0 24 24"><path d="M20 15A8 8 0 0 1 9 4a8 8 0 1 0 11 11Z"/></symbol>
     <symbol id="i-delete" viewBox="0 0 24 24"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6 19a5 5 0 0 1-1-10 7 7 0 0 1 13-2 6 6 0 0 1 0 12Z"/></symbol>
   </defs></svg>
   <div id="library" data-i18n="" data-i18n-data-drop-label="drop">
     <aside id="sidebar" aria-label="Bibliotheek" data-i18n="" data-i18n-aria-label="library">
@@ -330,6 +347,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
     <form method="dialog">
       <h2 id="book-actions-title"></h2>
       <button id="book-action-category" value="category"></button>
+      <button id="book-action-upload" value="cloudUpload" hidden data-i18n="cloudUpload">Uploaden naar cloud</button>
       <button value="removeRecent" data-i18n="removeRecent">Uit Laatst gelezen halen</button>
       <button id="book-action-finished" value="markFinished" data-i18n="markFinished">Markeren als gelezen</button>
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
@@ -341,6 +359,30 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <label for="category-select" data-i18n="chooseCategory">Kies een categorie</label><select id="category-select"></select>
       <div id="new-category-field" hidden><label for="new-category" data-i18n="newCategory">Nieuwe categorie</label><input id="new-category" type="text" autocomplete="off"></div>
       <div class="dialog-actions"><button value="cancel" formnovalidate data-i18n="cancel">Annuleren</button><button class="import" id="category-submit" value="save" data-i18n="import">Importeren</button></div>
+    </form>
+  </dialog>
+  <dialog id="login-dialog" class="cloud-dialog" aria-labelledby="login-title">
+    <form method="dialog">
+      <span class="eyebrow" data-i18n="account">Account</span>
+      <h2 id="login-title" data-i18n="cloudTitle">Je bibliotheek overal</h2>
+      <p data-i18n="cloudDescription">Je boeken en leesvoortgang worden veilig in je account bewaard.</p>
+      <button class="cloud-action" type="button" data-provider="google"><svg class="provider-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2.1H12v4h5.4a4.7 4.7 0 0 1-2 3.1 6 6 0 1 1 .1-10.4l3-3A10 10 0 1 0 22 12Z"/></svg><span data-i18n="continueGoogle">Doorgaan met Google</span></button>
+      <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
+    </form>
+  </dialog>
+  <dialog id="account-dialog" class="cloud-dialog" aria-labelledby="account-title">
+    <form method="dialog">
+      <h2 id="account-title" data-i18n="account">Account</h2>
+      <button id="cloud-sync" class="cloud-action" type="button" data-i18n="syncNow">Nu synchroniseren</button>
+      <button id="cloud-signout" class="cloud-action" type="button" data-i18n="signOut">Uitloggen</button>
+      <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
+    </form>
+  </dialog>
+  <dialog id="cloud-switch-dialog" class="cloud-dialog" aria-labelledby="cloud-switch-title">
+    <form method="dialog">
+      <h2 id="cloud-switch-title" data-i18n="account">Account</h2>
+      <p data-i18n="cloudSwitch">Dit apparaat bevat de bibliotheek van een ander account. Lokale boeken wissen en die van dit account laden?</p>
+      <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button><button value="confirm" class="import" data-i18n="cloudSwitchConfirm">Wissen en laden</button></div>
     </form>
   </dialog>
   <section id="reader" hidden aria-label="Boeklezer" tabindex="-1" data-i18n="" data-i18n-aria-label="reader">
@@ -366,6 +408,8 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
     <button id="update-later" type="button" data-i18n="updateLater">Later</button>
   </div>
   <noscript data-i18n="noScript">Schakel JavaScript in om je boeken te lezen. / Enable JavaScript to read your books.</noscript>
+  <script src="./config.js"></script>
+  <script src="./vendor/supabase.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
