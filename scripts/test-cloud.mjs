@@ -176,7 +176,8 @@ try {
     assert.equal(await f.cloud.start(), true); assert.equal(f.cloud.signedIn, true);
     assert.equal(f.statuses.at(-1), 'cloudSynced');
     assert.equal(f.calls.filter(call => call.type === 'download' && call.name.startsWith('book-')).length, 1);
-    assert.ok(f.calls.findIndex(call => call.type === 'list') < f.calls.findIndex(call => call.type === 'multipart'));
+    // Pull before push: the remote book-new.json download must precede the first push write.
+    assert.ok(f.calls.findIndex(call => call.type === 'download' && call.name === 'book-new.json') < f.calls.findIndex(call => call.type === 'multipart'));
     assert.ok(f.calls.findIndex(call => call.type === 'initiate') < f.calls.findIndex(call => call.type === 'bytes'));
     assert.ok(f.calls.findIndex(call => call.type === 'bytes') < f.calls.findIndex(call => call.type === 'multipart' && call.metadata.name === 'book-one.json'));
     const written = f.calls.find(call => call.type === 'multipart' && call.metadata.name === 'book-one.json');
@@ -396,10 +397,6 @@ try {
     let mode = 'success';
     globalThis.fetch = async (url, init) => {
         serverCalls.push({ url, init });
-        if (String(url).startsWith('https://oauth2.googleapis.com/revoke?')) {
-            assert.equal(new URL(url).searchParams.get('token'), 'refresh-secret');
-            throw new Error('Offline revoke');
-        }
         assert.equal(url, 'https://oauth2.googleapis.com/token');
         assert.equal(init.method, 'POST');
         const params = new URLSearchParams(init.body);
@@ -451,7 +448,7 @@ try {
     assert.equal(revoked.statusCode, 401); assert.match(revoked.headers['Set-Cookie'], /Max-Age=0/);
     const logout = await request('logout', { cookie: refreshCookie });
     assert.equal(logout.statusCode, 204); assert.match(logout.headers['Set-Cookie'], /Max-Age=0/);
-    console.log('PASS: auth env/method/return guards, exact OAuth scopes, state CSRF, cancel/consent loop, AES-GCM cookie roundtrip/tampering, token whitelist, invalid_grant, upstream failures and best-effort logout.');
+    console.log('PASS: auth env/method/return guards, exact OAuth scopes, state CSRF, cancel/consent loop, AES-GCM cookie roundtrip/tampering, token whitelist, invalid_grant, upstream failures and cookie-only logout.');
 } finally {
     for (const key of envNames) { if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key]; }
     globalThis.fetch = originalFetch;
