@@ -266,7 +266,7 @@ try {
     await echo.cloud.start();
     assert.equal(echo.calls.filter(call => call.type === 'get').length, 1, 'new session reads local state');
     console.log('PASS: 10 listed books count only 3 downloads; unknown tombstones and own echoes count zero; cursor advances, newer remote expires echoes; push excludes synced records.');
-    const remote = Array.from({ length: 25 }, (_, i) => ({ ...row, id: `remote-${i}`, file: false }));
+    const remote = Array.from({ length: 30 }, (_, i) => ({ ...row, id: `remote-${i}`, file: false }));
     for (const fail of [false, true]) {
         const f = fixture({ remote });
         f.intercept(async call => {
@@ -277,12 +277,12 @@ try {
         });
         await f.cloud.start();
         assert.equal(f.peak, 4, 'JSON and cover requests stay within four workers');
-        assert.equal(f.localBooks.size, fail ? 24 : 25);
-        assert.equal(f.calls.filter(call => call.type === 'download' && call.name.startsWith('cover-')).length, fail ? 24 : 25);
-        assert.ok(f.calls.some(call => call.type === 'refresh' && call.size >= 10 && call.size < 25), 'render before last merge');
+        assert.equal(f.localBooks.size, fail ? 29 : 30);
+        assert.equal(f.calls.filter(call => call.type === 'download' && call.name.startsWith('cover-')).length, fail ? 29 : 30);
+        assert.ok(f.calls.some(call => call.type === 'refresh' && call.size >= 25 && call.size < 30), 'render before last merge (25-item batch)');
         assert.equal(f.statuses.at(-1), fail ? 'cloudUnsynced' : 'cloudSynced');
         assert.equal(f.values.has('leeslamp.cloud.pull.user-a'), !fail);
-        assertProgress(f, 25);
+        assertProgress(f, 30);
     }
     const slow = fixture({ remote: remote.slice(0, 5).map(row => ({ ...row, cover: false })) });
     const lastDownload = deferred();
@@ -292,9 +292,9 @@ try {
     });
     const slowStart = slow.cloud.start();
     try {
-        await new Promise(resolve => setTimeout(resolve, 600));
+        await new Promise(resolve => setTimeout(resolve, 1700));
         assert.equal(slow.localBooks.size, 4);
-        assert.ok(slow.calls.some(call => call.type === 'refresh' && call.size === 4), '500 ms timer renders fewer than ten while last download is held');
+        assert.ok(slow.calls.some(call => call.type === 'refresh' && call.size === 4), '1500 ms timer renders fewer than 25 while last download is held');
     } finally { lastDownload.resolve(); await slowStart; }
     assertProgress(slow, 5);
     const cancelledPull = fixture({ remote });
@@ -310,7 +310,7 @@ try {
     assert.equal(downloads, 4, 'queued workers cannot request after sign-out');
     assert.equal(cancelledPull.localBooks.size, 0, 'in-flight pulls cannot merge after sign-out');
     assert.equal(cancelledPull.progress.length, progressBeforeSignOut, 'no stale progress after sign-out');
-    console.log('PASS: pull peak 4 (JSON + covers); 10-record batches and 500 ms timer render before final merge; partial failure continues without cursor commit; counts finish at 25/25 and 5/5.');
+    console.log('PASS: pull peak 4 (JSON + covers); 25-record batches and 1500 ms timer render before final merge; partial failure continues without cursor commit; counts finish at 30/30 and 5/5.');
 
     const records = Array.from({ length: 12 }, (_, i) => ({ ...book, id: `local-${i}`, source: { kind: 'blob' } }));
     for (const fail of [false, true]) {

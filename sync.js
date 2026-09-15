@@ -251,8 +251,9 @@ export function createCloud(local, ui) {
                     return merged;
                 });
                 if (changed) {
-                    if (++mergedCount >= 10 || Date.now() - lastRender >= 500) await refreshBatch();
-                    else if (!renderTimer) renderTimer = setTimeout(refreshBatch, Math.max(0, 500 - (Date.now() - lastRender)));
+                    // ponytail: a full grid rebuild per batch; 25 items / 1500 ms keeps phones with ~900 cards responsive.
+                    if (++mergedCount >= 25 || Date.now() - lastRender >= 1500) await refreshBatch();
+                    else if (!renderTimer) renderTimer = setTimeout(refreshBatch, Math.max(0, 1500 - (Date.now() - lastRender)));
                 }
             } finally { count.update(1); }
         }); } finally {

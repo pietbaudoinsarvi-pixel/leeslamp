@@ -736,7 +736,7 @@ $('#filters').addEventListener('click', e => {
     if (button) { filter = button.dataset.filter; renderLibrary(); setFiltersOpen(false); }
 });
 const mobileFilters = matchMedia('(max-width:760px)');
-let filtersOpen = false, filterScroll = '';
+let filtersOpen = false, filterScroll = '', refreshPending = false;
 function setFiltersOpen(open, fromHistory = false) {
     open = open && mobileFilters.matches;
     if (open === filtersOpen) return;
@@ -750,7 +750,7 @@ function setFiltersOpen(open, fromHistory = false) {
         else $('#filters').removeAttribute(attribute);
     }
     if (open) { filterScroll = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
-    else document.body.style.overflow = filterScroll;
+    else { document.body.style.overflow = filterScroll; if (refreshPending) { refreshPending = false; renderLibrary(); } }
     for (const node of [$('#library main'), ...$('#sidebar').children].filter(node => node.id !== 'filters')) node.inert = open;
     (open ? $('#filters-close') : mobileFilters.matches ? $('#filters-toggle') : $('#filters [aria-current]')).focus({ preventScroll: true });
 }
@@ -2029,7 +2029,8 @@ async function setupCloud() {
             if (valid()) { localFiles.add(id); renderLibrary(); }
         },
         async flush() { if (active?.dirty) await saveProgress(active, true); },
-        async refresh() { renderLibrary(); },
+        // Never rebuild the grid behind the open filter sheet or an open book; render once it is visible again.
+        async refresh() { if (filtersOpen || active) refreshPending = true; else renderLibrary(); },
         async wipe() {
             while (importing) await new Promise(resolve => setTimeout(resolve, 100));
             setImporting(true);

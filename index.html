@@ -291,7 +291,7 @@
       #filters-toggle-label { overflow-wrap:anywhere; min-width:0; }
       #filters-toggle .icon { display:block; width:24px; height:24px; stroke-width:1; color:var(--accent); transition:transform 150ms var(--ease); }
       #filters-toggle[aria-expanded="true"] .icon { transform:rotate(180deg); }
-      #filters { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; overflow:hidden; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); background:var(--side); visibility:hidden; pointer-events:none; opacity:0; transform:translateY(100%); transition:transform 150ms var(--ease),opacity 150ms var(--ease),visibility 0s 150ms; }
+      #filters { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; overflow:hidden; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); background:var(--side); visibility:hidden; pointer-events:none; opacity:0; transform:translateY(100%); will-change:transform,opacity; transition:transform 150ms var(--ease),opacity 150ms var(--ease),visibility 0s 150ms; }
       #sidebar.filters-open #filters { visibility:visible; pointer-events:auto; opacity:1; transform:translateY(0); transition:transform 500ms var(--ease),opacity 500ms var(--ease); }
       #filters .filters-heading { display:flex; align-items:center; justify-content:space-between; flex:0 0 48px; border-bottom:1px solid var(--line); margin-bottom:8px; }
       #filters #filters-close { width:28px; min-height:28px; padding:4px; margin:0; }
