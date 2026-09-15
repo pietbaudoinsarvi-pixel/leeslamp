@@ -1,6 +1,7 @@
 # Leeslamp
 
 ## Deployen
+Elke push naar `master` op GitHub deployt automatisch via de Vercel-Git-koppeling; Vercel voert daarbij `node scripts/stamp.mjs` uit als buildopdracht, zodat `version.js` per deploy een nieuw stempel krijgt en geopende apps de updatemelding zien. Handmatig deployen kan nog steeds met `deploy.cmd`.
 Gebruik vanuit de repositoryroot `deploy.cmd` om te publiceren, zodat open apps de melding krijgen dat ze kunnen vernieuwen. Het script schrijft een versiestempel (korte Git-hash plus UTC-tijd, of alleen tijd zonder Git), commit `version.js` en deployt naar Vercel. Sla appwijzigingen vooraf op in Git. Met Vernieuwen wordt de leesvoortgang bewaard en de app herladen; Later verbergt de melding tot een volgende update of herlaadbeurt.
 
 ## Ontwerp
