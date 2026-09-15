@@ -120,7 +120,8 @@
     .library-count-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
     #clear-recent { padding:4px 0; font-size:11px; color:var(--mute); text-decoration:underline; text-underline-offset:3px; border-radius:0; }
     #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(152px,1fr)); gap:36px 28px; }
-    .card { min-width:0; position:relative; }
+    /* Skip layout and paint for cards outside the viewport; the size hint keeps the scrollbar honest. */
+    .card { min-width:0; position:relative; content-visibility:auto; contain-intrinsic-size:auto 280px; }
     .card.arriving { animation:cover-in 560ms var(--ease) both; animation-delay:var(--delay,0ms); }
     .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:0; }
     .book-open:hover { background:none; }
