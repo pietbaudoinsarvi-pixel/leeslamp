@@ -65,7 +65,8 @@
     .brand svg { width:28px; height:32px; color:var(--accent); }
     .sidebar-heading { padding:0 12px 12px; }
     #filters { overflow:auto; flex:1; scrollbar-width:thin; }
-    #filters-toggle,.filters-heading { display:none; }
+    .filters-heading,#filters-toggle .icon { display:none; }
+    #filters-toggle { display:contents; font:inherit; letter-spacing:inherit; }
     #filter-list { display:contents; }
     #filters button { position:relative; width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; margin:2px 0; padding:10px 12px; font-size:13px; }
     #filters button[aria-current] { background:var(--hover); font-weight:600; }
@@ -269,7 +270,7 @@
     @media (max-width:1100px) { #sidebar { width:192px; } .library-tools { width:100%; } .search-field { flex:1; } #search { width:100%; } #grid { gap:28px 20px; } }
     @media (max-width:760px) {
       #library { flex-direction:column; }
-      #sidebar { width:100%; padding:16px 16px 0; display:grid; grid-template-columns:1fr 1fr; gap:8px; border-right:0; border-bottom:1px solid var(--line); }
+      #sidebar { width:100%; padding:16px 16px 8px; display:grid; grid-template-columns:1fr 1fr; gap:8px; border-right:0; border-bottom:1px solid var(--line); }
       .brand { grid-column:1; grid-row:1; margin-bottom:4px; padding:0; font-size:16px; gap:8px; }
       .brand svg { width:22px; height:28px; }
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
@@ -285,8 +286,10 @@
       #account-button .account-avatar { width:28px; height:28px; }
       #mode { order:1; }
       #lang { order:2; gap:2px; }
-      #filters-toggle { grid-column:1/-1; order:2; display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; height:40px; margin-bottom:10px; padding:0 12px; text-align:left; }
-      #filters-toggle-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      #filters-toggle { display:inline-flex; align-items:center; gap:8px; max-width:100%; min-height:44px; padding:0; border:0; border-radius:2px; background:none; text-align:left; }
+      #filters-toggle-label { overflow-wrap:anywhere; min-width:0; }
+      #filters-toggle .icon { display:block; width:24px; height:24px; stroke-width:1; color:var(--accent); transition:transform 150ms var(--ease); }
+      #filters-toggle[aria-expanded="true"] .icon { transform:rotate(180deg); }
       #filters { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; overflow:hidden; padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left)); background:var(--side); visibility:hidden; pointer-events:none; opacity:0; transform:translateY(100%); transition:transform 150ms var(--ease),opacity 150ms var(--ease),visibility 0s 150ms; }
       #sidebar.filters-open #filters { visibility:visible; pointer-events:auto; opacity:1; transform:translateY(0); transition:transform 500ms var(--ease),opacity 500ms var(--ease); }
       #filters .filters-heading { display:flex; align-items:center; justify-content:space-between; flex:0 0 48px; border-bottom:1px solid var(--line); margin-bottom:8px; }
@@ -347,7 +350,6 @@
         <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
         <div id="filter-list"></div>
       </nav>
-      <button id="filters-toggle" class="folder-button" aria-expanded="false" aria-controls="filters"><span id="filters-toggle-label"></span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
       <div class="sidebar-bottom">
         <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
         <button class="folder-button" id="find-books" hidden data-i18n="findBooks" aria-describedby="find-books-hint">Boeken zoeken</button>
@@ -361,7 +363,7 @@
     <main>
       <div class="library-content">
         <header class="library-header">
-          <div class="heading"><span class="eyebrow" data-i18n="tagline">Je eigen leesruimte</span><h1 id="filter-title" data-i18n="allBooks">Alle boeken</h1></div>
+          <div class="heading"><span class="eyebrow" data-i18n="tagline">Je eigen leesruimte</span><h1 id="filter-title"><button id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters"><span id="filters-toggle-label" data-i18n="allBooks">Alle boeken</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button></h1></div>
           <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur" data-i18n="" data-i18n-placeholder="searchPlaceholder" data-i18n-aria-label="searchLabel"></label><select id="sort" aria-label="Sorteren" data-i18n="" data-i18n-aria-label="sort"><option value="opened" data-i18n="recent">Laatst gelezen</option><option value="title" data-i18n="title">Titel</option><option value="author" data-i18n="author">Auteur</option><option value="added" data-i18n="added">Toegevoegd</option></select></div>
         </header>
         <div class="library-meta"><div class="library-count-actions"><span id="library-count" role="status" aria-live="polite" data-i18n="bookCountOther" data-i18n-params='{"count":0}'>0 boeken</span><button id="clear-recent" hidden data-i18n="clearRecent">Lijst leegmaken</button></div><span data-i18n="pace">Jouw boeken. Jouw tempo.</span></div>

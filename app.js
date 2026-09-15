@@ -626,8 +626,7 @@ function renderFilters() {
     for (const ext of extensions) add(ext, ext.toUpperCase(), visible.filter(b => b.ext === ext).length);
     $('#filter-list').replaceChildren(fragment);
     if (focusedFilter) [...$('#filter-list').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
-    $('#filter-title').textContent = filterName();
-    $('#filters-toggle-label').textContent = `${filterName()} · ${$('#filters [aria-current] .count').textContent}`;
+    $('#filters-toggle-label').textContent = filterName();
 }
 function renderLibrary() {
     renderFilters();
