@@ -137,6 +137,7 @@
     .cloud-dialog::backdrop { background:#18251c66; }
     .cloud-dialog h2 { margin:8px 0 16px; font-size:20px; font-weight:500; }
     .cloud-dialog p { margin:0 0 24px; font-size:13px; line-height:1.6; }
+    .cloud-dialog .cloud-hint { margin:-16px 0 24px; font-size:12px; color:var(--mute); }
     .cloud-dialog .cloud-action { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:12px; margin-bottom:8px; border:1px solid var(--line); background:var(--card); }
     .cloud-dialog .cloud-action:hover { color:var(--accent); }
     .cloud-dialog .provider-mark { width:20px; height:20px; fill:currentColor; }
@@ -366,6 +367,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <span class="eyebrow" data-i18n="account">Account</span>
       <h2 id="login-title" data-i18n="cloudTitle">Je bibliotheek overal</h2>
       <p data-i18n="cloudDescription">Je boeken en leesvoortgang worden veilig in je account bewaard.</p>
+      <p class="cloud-hint" data-i18n="cloudSpaceHint">Tip: kies een Google-account met nog veel vrije ruimte voor je boeken.</p>
       <button class="cloud-action" type="button" data-provider="google"><svg class="provider-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.6 12.2c0-.7-.1-1.4-.2-2.1H12v4h5.4a4.7 4.7 0 0 1-2 3.1 6 6 0 1 1 .1-10.4l3-3A10 10 0 1 0 22 12Z"/></svg><span data-i18n="continueGoogle">Doorgaan met Google</span></button>
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
     </form>
@@ -408,8 +410,6 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
     <button id="update-later" type="button" data-i18n="updateLater">Later</button>
   </div>
   <noscript data-i18n="noScript">Schakel JavaScript in om je boeken te lezen. / Enable JavaScript to read your books.</noscript>
-  <script src="./config.js"></script>
-  <script src="./vendor/supabase.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

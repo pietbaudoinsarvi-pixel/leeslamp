@@ -9,6 +9,7 @@ const STRINGS = {
         signIn: 'Inloggen',
         cloudTitle: 'Je bibliotheek overal',
         cloudDescription: 'Je boeken en leesvoortgang worden veilig in je account bewaard.',
+        cloudSpaceHint: 'Tip: kies een Google-account met nog veel vrije ruimte voor je boeken.',
         continueGoogle: 'Doorgaan met Google',
         syncNow: 'Nu synchroniseren',
         signOut: 'Uitloggen',
@@ -19,7 +20,6 @@ const STRINGS = {
         cloudUpload: 'Uploaden naar cloud',
         cloudOnly: 'Alleen in de cloud',
         cloudFailed: 'Synchroniseren is mislukt. Probeer het opnieuw.',
-        cloudFileTooLarge: '{name}: groter dan 50 MB. Het bestand wordt niet naar de cloud geüpload.',
         cloudSwitch: 'Dit apparaat bevat de bibliotheek van een ander account. Lokale boeken wissen en die van dit account laden?',
         cloudSwitchConfirm: 'Wissen en laden',
         updateAvailable: 'Nieuwe versie beschikbaar',
@@ -178,6 +178,7 @@ const STRINGS = {
         signIn: 'Sign in',
         cloudTitle: 'Your library everywhere',
         cloudDescription: 'Your books and reading progress are safely stored in your account.',
+        cloudSpaceHint: 'Tip: pick a Google account with plenty of free space for your books.',
         continueGoogle: 'Continue with Google',
         syncNow: 'Sync now',
         signOut: 'Sign out',
@@ -188,7 +189,6 @@ const STRINGS = {
         cloudUpload: 'Upload to cloud',
         cloudOnly: 'Only in the cloud',
         cloudFailed: 'Sync failed. Please try again.',
-        cloudFileTooLarge: '{name}: larger than 50 MB. The file will not be uploaded to the cloud.',
         cloudSwitch: 'This device contains the library of another account. Clear local books and load those of this account?',
         cloudSwitchConfirm: 'Clear and load',
         updateAvailable: 'New version available',
@@ -766,7 +766,7 @@ function chooseBookAction(record) {
     if (dialog.open) return Promise.resolve('');
     localize($('#book-actions-title'), 'bookActions', { title: record.title });
     localize($('#book-action-category'), 'changeCategory', { title: record.title });
-    $('#book-action-upload').hidden = !(cloud?.signedIn && record.source.kind === 'fs' && !record.cloudFile && !record.fileSynced && !record.fileSkipped);
+    $('#book-action-upload').hidden = !(cloud?.signedIn && record.source.kind === 'fs' && !record.cloudFile && !record.fileSynced);
     const finished = record.finished === true;
     const recentButton = $('#book-actions [value="removeRecent"]');
     if (recentButton) recentButton.hidden = !record.opened;
@@ -1874,7 +1874,6 @@ async function cloudChange(id, merge) {
     }
 }
 async function setupCloud() {
-    if (!window.LEESLAMP_CLOUD?.url || !window.LEESLAMP_CLOUD?.anonKey) return;
     const row = el('button', 'account-row'); row.id = 'account-button'; row.type = 'button';
     row.setAttribute('aria-haspopup', 'dialog');
     let user = null, statusKey = 'cloudUnsynced';
@@ -1882,11 +1881,10 @@ async function setupCloud() {
         user = next;
         row.replaceChildren();
         if (!user) { statusKey = 'cloudUnsynced'; row.append(icon('cloud'), localize(el('span'), 'signIn')); return; }
-        const metadata = user.user_metadata || {};
-        const name = metadata.full_name || metadata.name || user.email || t('account');
+        const name = user.name || user.email || t('account');
         const avatar = el('span', 'account-avatar', String(name).split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase());
-        if (typeof metadata.avatar_url === 'string' && /^https:\/\//i.test(metadata.avatar_url)) {
-            const image = el('img'); image.src = metadata.avatar_url; image.alt = ''; image.referrerPolicy = 'no-referrer';
+        if (typeof user.picture === 'string' && /^https:\/\//i.test(user.picture)) {
+            const image = el('img'); image.src = user.picture; image.alt = ''; image.referrerPolicy = 'no-referrer';
             image.addEventListener('error', () => image.remove(), { once: true }); avatar.append(image);
         }
         const details = el('span', 'account-details');
@@ -1894,7 +1892,7 @@ async function setupCloud() {
         const status = localize(el('span', 'account-status'), statusKey); status.setAttribute('role', 'status');
         details.append(status); row.append(avatar, details);
     }
-    cloud = createCloud(window.LEESLAMP_CLOUD, {
+    cloud = createCloud({
         all: () => all('books'), get: id => get('books', id), change: cloudChange,
         file: async id => (await get('files', id))?.file,
         async saveFile(id, file, valid) {
@@ -1930,10 +1928,11 @@ async function setupCloud() {
             });
         },
     });
+    if (!await cloud.start()) { cloud = null; return; }
     for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
     const note = $('.device-note');
     note.querySelector(':scope > .icon').remove(); note.querySelector(':scope > span').remove();
-    note.prepend(row); account(null);
+    note.prepend(row);
     row.addEventListener('click', () => {
         const dialog = $(user ? '#account-dialog' : '#login-dialog');
         if (!dialog.open) dialog.showModal();
@@ -1941,11 +1940,10 @@ async function setupCloud() {
     for (const button of document.querySelectorAll('[data-provider]')) button.addEventListener('click', async () => {
         const buttons = document.querySelectorAll('[data-provider]');
         for (const item of buttons) item.disabled = true;
-        if (!await cloud.signIn(button.dataset.provider)) for (const item of buttons) item.disabled = false;
+        cloud.signIn();
     });
     $('#cloud-sync').addEventListener('click', () => { $('#account-dialog').close(); void cloud.sync(true); });
     $('#cloud-signout').addEventListener('click', () => { $('#account-dialog').close(); void cloud.signOut(); });
-    await cloud.start();
 }
 
 applyLanguage(); syncPreferences();

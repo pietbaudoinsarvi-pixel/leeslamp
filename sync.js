@@ -31,25 +31,16 @@ export function mergeRow(local, row) {
     return record;
 }
 
-export function createCloud(config, local, ui) {
-    if (!config?.url || !config?.anonKey || typeof window === 'undefined') return null;
-    const client = window.supabase.createClient(config.url, config.anonKey, {
-        auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true },
-    });
-    const storage = client.storage.from('books');
+export function createCloud(local, ui) {
     const queueKey = 'leeslamp.cloud.tombstones', userKey = 'leeslamp.cloud.user';
     let session = null, ready = false, epoch = 0, running = null, again = false, notifyFailure = false, timer;
-    let authWork = Promise.resolve();
-    let sessionFailed = false, recovering = null;
+    let authWork = Promise.resolve(), refreshing = null;
+    let sessionFailed = false, recovering = null, enabled = true;
     const uploads = new Map();
     const cursorKey = uid => `leeslamp.cloud.pull.${uid}`;
+    const folderKey = uid => `leeslamp.cloud.folder.${uid}`;
     const valid = (uid, generation) => ready && session?.user.id === uid && epoch === generation;
     const check = (uid, generation) => { if (!valid(uid, generation)) throw new Error('Account changed'); };
-    const result = async promise => {
-        const { data, error } = await promise;
-        if (error) throw new Error('Cloud request failed'); // Never log provider payloads or tokens.
-        return data;
-    };
     const queue = () => {
         const value = JSON.parse(localStorage.getItem(queueKey) || '[]');
         if (!Array.isArray(value)) throw new Error('Invalid deletion queue');
@@ -60,94 +51,193 @@ export function createCloud(config, local, ui) {
         console.warn('Cloud sync unavailable');
         if (userInitiated) ui.toast('cloudFailed');
     }
-    // uid is always captured from the current session, never from row.data or source.
-    function path(uid, generation, id, cover = false) {
+    async function token() {
+        const response = await fetch('/api/auth/token', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+        if (response.status === 401) return null;
+        if (!response.ok) throw Object.assign(new Error('Authentication unavailable'), { status: response.status });
+        const data = await response.json();
+        if (!data.accessToken || typeof data.user?.id !== 'string' || !Number.isFinite(data.expiresIn)) throw new Error('Invalid session');
+        return { ...data, expires: Date.now() + data.expiresIn * 1000 };
+    }
+    async function refresh(uid, generation) {
+        if (!refreshing) refreshing = token().finally(() => { refreshing = null; });
+        const next = await refreshing;
         check(uid, generation);
-        if (typeof id !== 'string' || !id || id.split('/').some(part => !part || part === '.' || part === '..') || /[\\\u0000-\u001f]/.test(id)) throw new Error('Invalid book id');
-        return `${uid}/${id}${cover ? '.jpg' : ''}`;
+        if (!next || next.user.id !== uid) { receive(next); throw new Error('Account changed'); }
+        session = next;
+    }
+    async function drive(path, init = {}, uid = session?.user.id, generation = epoch) {
+        const { format = 'json', ...options } = init;
+        const url = new URL(path, 'https://www.googleapis.com');
+        if (url.origin !== 'https://www.googleapis.com' || !/^\/(upload\/)?drive\/v3\/files(?:\/|$)/.test(url.pathname)) throw new Error('Invalid Drive URL');
+        check(uid, generation);
+        if (session.expires - Date.now() < 60000) await refresh(uid, generation);
+        let refreshed = false, attempts = 0;
+        for (;;) {
+            check(uid, generation);
+            const response = await fetch(url.href, { ...options, headers: { ...options.headers, Authorization: `Bearer ${session.accessToken}` } });
+            check(uid, generation);
+            if (response.status === 401 && !refreshed) {
+                refreshed = true; await refresh(uid, generation); continue;
+            }
+            let limited = response.status === 429 || response.status >= 500;
+            if (response.status === 403) {
+                const error = await response.clone().json().catch(() => ({}));
+                limited = error.error?.errors?.some(item => ['rateLimitExceeded', 'userRateLimitExceeded'].includes(item.reason));
+            }
+            if (limited && ++attempts < 3) { await new Promise(resolve => setTimeout(resolve, 250 * 2 ** (attempts - 1))); continue; }
+            if (!response.ok) throw Object.assign(new Error('Drive request failed'), { status: response.status });
+            if (format === 'raw') return response;
+            if (format === 'blob') return response.blob();
+            return response.status === 204 ? null : response.json();
+        }
+    }
+    const literal = value => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+    const name = (id, cover = false) => {
+        if (typeof id !== 'string' || !id) throw new Error('Invalid book id');
+        return `${cover ? 'cover-' : 'book-'}${id}${cover ? '.jpg' : '.json'}`;
+    };
+    const filePath = id => `/drive/v3/files/${encodeURIComponent(id)}`;
+    async function list(uid, generation, query, hidden = true) {
+        const files = [];
+        let pageToken;
+        do {
+            const params = new URLSearchParams({ q: `trashed = false and (${query})`,
+                fields: 'nextPageToken,files(id,name,modifiedTime,appProperties)', pageSize: '1000' });
+            if (hidden) params.set('spaces', 'appDataFolder');
+            if (pageToken) params.set('pageToken', pageToken);
+            const page = await drive(`/drive/v3/files?${params}`, {}, uid, generation);
+            files.push(...page.files); pageToken = page.nextPageToken;
+        } while (pageToken);
+        return files;
+    }
+    const findName = async (uid, generation, value) => (await list(uid, generation, `name = ${literal(value)}`))[0]?.id;
+    const findFile = async (uid, generation, id) => (await list(uid, generation,
+        `appProperties has { key='leeslampId' and value=${literal(id)} }`, false))[0]?.id;
+    async function multipart(uid, generation, metadata, content, id) {
+        const boundary = `leeslamp-${crypto.randomUUID()}`;
+        const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+            JSON.stringify(metadata), `\r\n--${boundary}\r\nContent-Type: ${content.type}\r\n\r\n`, content, `\r\n--${boundary}--\r\n`]);
+        return drive(`/upload/drive/v3/files${id ? '/' + encodeURIComponent(id) : ''}?uploadType=multipart`, {
+            method: id ? 'PATCH' : 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
+        }, uid, generation);
+    }
+    async function writeNamed(uid, generation, value, content, properties, cached) {
+        let id = cached || await findName(uid, generation, value);
+        const write = () => multipart(uid, generation, { name: value, mimeType: content.type,
+            ...(id ? {} : { parents: ['appDataFolder'] }), ...(properties ? { appProperties: properties } : {}) }, content, id);
+        try { return (await write()).id; }
+        catch (error) {
+            if (error.status !== 404) throw error;
+            id = await findName(uid, generation, value);
+            return (await write()).id;
+        }
+    }
+    async function folder(uid, generation) {
+        const cached = localStorage.getItem(folderKey(uid));
+        if (cached) return cached;
+        let id = (await list(uid, generation, "name = 'Leeslamp' and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='leeslamp' and value='library' }", false))[0]?.id;
+        if (!id) id = (await drive('/drive/v3/files', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'Leeslamp', mimeType: 'application/vnd.google-apps.folder', appProperties: { leeslamp: 'library' } }) }, uid, generation)).id;
+        check(uid, generation);
+        localStorage.setItem(folderKey(uid), id);
+        return id;
+    }
+    async function uploadFile(uid, generation, record, file) {
+        const existing = record.driveFile || await findFile(uid, generation, record.id);
+        if (existing) {
+            try { await drive(filePath(existing), {}, uid, generation); return existing; }
+            catch (error) { if (error.status !== 404) throw error; }
+            const found = await findFile(uid, generation, record.id);
+            if (found) return found;
+        }
+        const parent = await folder(uid, generation), type = file.type || 'application/octet-stream';
+        const response = await drive('/upload/drive/v3/files?uploadType=resumable', { method: 'POST', format: 'raw',
+            headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': type },
+            body: JSON.stringify({ name: record.name || record.id, parents: [parent], appProperties: { leeslampId: record.id }, mimeType: type }) }, uid, generation);
+        const location = response.headers.get('Location');
+        if (!location) throw new Error('Missing upload URL');
+        return (await drive(location, { method: 'PUT', headers: { 'Content-Type': type }, body: file }, uid, generation)).id;
     }
     async function pull(uid, generation) {
         const cursor = localStorage.getItem(cursorKey(uid)) || '1970-01-01T00:00:00.000Z';
         let latest = cursor;
-        for (let offset = 0; ; offset += 1000) {
+        const files = await list(uid, generation, `name contains 'book-' and modifiedTime > ${literal(cursor)}`);
+        // Sequential downloads keep memory bounded and stay below the four-request ceiling.
+        for (const file of files) {
             check(uid, generation);
-            const rows = await result(client.from('books').select('*').gt('updated_at', cursor).order('updated_at').range(offset, offset + 999));
-            check(uid, generation);
-            for (const row of rows) {
-                if (row.user_id !== uid || typeof row.updated_at !== 'string' || !Number.isFinite(Date.parse(row.updated_at))) throw new Error('Invalid cloud row');
-                const pending = queue().find(item => item.uid === uid && item.id === row.id);
-                if (!pending || pending.updated < row.updated) {
-                    let cover;
-                    if (!await local.get(row.id) && row.deleted !== true && row.cover === true) {
-                        cover = await result(storage.download(path(uid, generation, row.id, true)));
-                    }
-                    check(uid, generation);
-                    await local.change(row.id, current => {
-                        if (!valid(uid, generation)) return undefined;
-                        const merged = mergeRow(current, row);
-                        if (merged && !current && cover) merged.cover = cover;
-                        return merged;
-                    });
+            if (!file.name.startsWith('book-') || !file.name.endsWith('.json')) continue;
+            const id = file.name.slice(5, -5), properties = file.appProperties || {};
+            const updated = Number(properties.updated);
+            if (!Number.isFinite(updated) || !Number.isFinite(Date.parse(file.modifiedTime))) throw new Error('Invalid cloud row');
+            const pending = queue().find(item => item.sub === uid && item.id === id);
+            const current = await local.get(id);
+            if ((!pending || pending.updated < updated) && (!current || (current.updated ?? 0) <= updated)) {
+                const row = { id, updated, deleted: properties.deleted === '1', file: properties.file === '1', cover: properties.cover === '1' };
+                if (!row.deleted && (!current || updated > (current.updated ?? 0))) {
+                    row.data = await drive(`${filePath(file.id)}?alt=media`, {}, uid, generation);
                 }
-                if (row.updated_at > latest) latest = row.updated_at;
+                let cover;
+                if (!current && !row.deleted && row.cover) {
+                    const coverId = await findName(uid, generation, name(id, true));
+                    if (coverId) cover = await drive(`${filePath(coverId)}?alt=media`, { format: 'blob' }, uid, generation);
+                }
+                check(uid, generation);
+                await local.change(id, localRecord => {
+                    if (!valid(uid, generation)) return undefined;
+                    const merged = mergeRow(localRecord, row);
+                    if (merged) { merged.driveJson = file.id; if (!localRecord && cover) merged.cover = cover; }
+                    return merged;
+                });
             }
-            if (rows.length < 1000) break;
+            if (file.modifiedTime > latest) latest = file.modifiedTime;
         }
         check(uid, generation);
         localStorage.setItem(cursorKey(uid), latest);
     }
+    async function deleteFile(uid, generation, id) {
+        if (!id) return;
+        try { await drive(filePath(id), { method: 'DELETE', format: 'raw' }, uid, generation); }
+        catch (error) { if (error.status !== 404) throw error; }
+    }
     async function drain(uid, generation) {
-        for (const item of queue().filter(item => item.uid === uid)) {
+        for (const item of queue().filter(item => item.sub === uid)) {
             check(uid, generation);
             const current = await local.get(item.id);
             if (!current || (current.updated ?? 0) <= item.updated) {
-                const filePath = path(uid, generation, item.id), coverPath = path(uid, generation, item.id, true);
-                await result(client.from('books').upsert([{ user_id: uid, id: item.id, data: {}, updated: item.updated, deleted: true, file: false, cover: false }]));
-                check(uid, generation);
-                await result(storage.remove([filePath, coverPath]));
+                await writeNamed(uid, generation, name(item.id), new Blob([JSON.stringify({ updated: item.updated, deleted: true })], { type: 'application/json' }),
+                    { updated: String(item.updated), deleted: '1', file: '0', cover: '0' });
+                await deleteFile(uid, generation, await findName(uid, generation, name(item.id, true)));
+                await deleteFile(uid, generation, await findFile(uid, generation, item.id));
             }
             check(uid, generation);
-            localStorage.setItem(queueKey, JSON.stringify(queue().filter(value => !(value.uid === uid && value.id === item.id && value.updated === item.updated))));
+            localStorage.setItem(queueKey, JSON.stringify(queue().filter(value => !(value.sub === uid && value.id === item.id && value.updated === item.updated))));
         }
     }
     async function push(uid, generation) {
-        const records = planPush(await local.all());
-        for (let offset = 0; offset < records.length; offset += 100) {
-            const batch = records.slice(offset, offset + 100), rows = [];
-            for (const record of batch) {
-                check(uid, generation);
-                const flags = {};
-                if (!record.fileSynced && !record.fileSkipped && (record.source?.kind === 'blob' || uploads.has(record.id))) {
-                    const file = uploads.get(record.id) || await local.file(record.id);
-                    if (file) {
-                        if (file.size > 50 * 1024 * 1024) {
-                            flags.fileSkipped = true;
-                            await local.change(record.id, current => current && valid(uid, generation) ? { ...current, fileSkipped: true } : undefined);
-                            check(uid, generation);
-                            ui.toast('cloudFileTooLarge', { name: record.name });
-                        } else {
-                            await result(storage.upload(path(uid, generation, record.id), file, { upsert: true, contentType: file.type || 'application/octet-stream' }));
-                            flags.fileSynced = flags.cloudFile = true;
-                        }
-                    }
+        for (const record of planPush(await local.all())) {
+            check(uid, generation);
+            const flags = {};
+            if (!record.fileSynced && (record.source?.kind === 'blob' || uploads.has(record.id))) {
+                const file = uploads.get(record.id) || await local.file(record.id);
+                if (file) {
+                    flags.driveFile = await uploadFile(uid, generation, record, file);
+                    flags.fileSynced = flags.cloudFile = true;
                 }
-                if (record.cover && !record.coverSynced) {
-                    await result(storage.upload(path(uid, generation, record.id, true), record.cover, { upsert: true, contentType: 'image/jpeg' }));
-                    flags.coverSynced = true;
-                }
-                check(uid, generation);
-                await local.change(record.id, current => current && valid(uid, generation) ? { ...current, ...flags } : undefined);
-                Object.assign(record, flags);
-                rows.push({ user_id: uid, id: record.id, data: recordData(record), updated: record.updated,
-                    deleted: false, file: record.cloudFile === true || record.fileSynced === true, cover: record.coverSynced === true });
+            }
+            if (record.cover && !record.coverSynced) {
+                await writeNamed(uid, generation, name(record.id, true), new Blob([record.cover], { type: 'image/jpeg' }), null);
+                flags.coverSynced = true;
             }
             check(uid, generation);
-            await result(client.from('books').upsert(rows));
+            await local.change(record.id, current => current && valid(uid, generation) ? { ...current, ...flags } : undefined);
+            Object.assign(record, flags);
+            const properties = { updated: String(record.updated), deleted: '0',
+                file: record.cloudFile === true || record.fileSynced === true ? '1' : '0', cover: record.coverSynced === true ? '1' : '0' };
+            const driveJson = await writeNamed(uid, generation, name(record.id), new Blob([JSON.stringify({ ...recordData(record), updated: record.updated, deleted: false })], { type: 'application/json' }), properties, record.driveJson);
             check(uid, generation);
-            for (const record of batch) {
-                await local.change(record.id, current => current && valid(uid, generation) ? { ...current, synced: record.updated } : undefined);
-                if (record.fileSynced || record.fileSkipped) uploads.delete(record.id);
-            }
+            await local.change(record.id, current => current && valid(uid, generation) ? { ...current, driveJson, synced: record.updated } : undefined);
+            if (record.fileSynced) uploads.delete(record.id);
         }
     }
     function sync(userInitiated = false) {
@@ -189,14 +279,15 @@ export function createCloud(config, local, ui) {
         const uid = next.user.id, previous = localStorage.getItem(userKey);
         if (previous && previous !== uid) {
             if ((await local.all()).length && !await ui.confirm()) {
-                await result(client.auth.signOut());
-                if (epoch === generation) receive(null);
+                try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', cache: 'no-store' }); }
+                finally { if (epoch === generation) receive(null); }
                 return;
             }
             if (generation !== epoch) return;
             await local.wipe();
             localStorage.removeItem(queueKey);
             localStorage.removeItem(cursorKey(uid));
+            localStorage.removeItem(folderKey(uid));
         }
         if (generation !== epoch) return;
         // Books created before cloud support need one initial push as well.
@@ -207,7 +298,7 @@ export function createCloud(config, local, ui) {
         localStorage.setItem(userKey, uid);
         ready = true;
         ui.account(next.user);
-        await sync();
+        void sync();
     }
     function receive(next) {
         if (ready && next?.user.id === session?.user.id) { session = next; ui.account(next.user); return; }
@@ -215,58 +306,55 @@ export function createCloud(config, local, ui) {
         session = next; ready = false; sessionFailed = false; again = false; clearTimeout(timer);
         const generation = ++epoch;
         uploads.clear();
-        if (previous && !next) {
-            try { localStorage.removeItem(cursorKey(previous)); } catch { failure(); }
+        if (previous) {
+            try { localStorage.removeItem(cursorKey(previous)); localStorage.removeItem(folderKey(previous)); } catch { failure(); }
         }
-        // Auth callbacks must return synchronously; SDK auth calls otherwise deadlock.
         authWork = authWork.then(() => acceptSession(next, generation)).catch(() => { ready = false; sessionFailed = true; failure(); });
     }
-    function restoreSession(userInitiated = false) {
+    function restoreSession(userInitiated = false, initial = false) {
         if (recovering) return recovering;
         const initialEpoch = epoch;
         recovering = (async () => {
             try {
-                const data = await result(client.auth.getSession());
-                if (epoch === initialEpoch) receive(data.session);
-            } catch {
-                if (epoch === initialEpoch) { sessionFailed = true; failure(userInitiated); }
+                const next = await token();
+                if (epoch === initialEpoch) receive(next);
+            } catch (error) {
+                if (epoch !== initialEpoch) return;
+                if (initial && (!error.status || [501, 404, 405].includes(error.status))) { enabled = false; return; }
+                sessionFailed = true; ui.account(null); failure(userInitiated);
             }
         })().finally(() => { recovering = null; });
         return recovering;
     }
     async function start() {
-        client.auth.onAuthStateChange((_event, next) => receive(next));
-        try { await restoreSession(); }
-        finally {
-            const url = new URL(location.href);
-            for (const key of ['code', 'state', 'error', 'error_description']) url.searchParams.delete(key);
-            history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
-        }
+        const url = new URL(location.href);
+        url.searchParams.delete('auth');
+        history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+        await restoreSession(false, true);
+        if (!enabled) return false;
+        await authWork;
         document.addEventListener('visibilitychange', () => { if (!document.hidden) void sync(); });
         for (const event of ['focus', 'online']) window.addEventListener(event, () => void sync());
+        return true;
     }
     return {
         start, changed, sync,
         get signedIn() { return ready; },
-        async signIn(provider) {
-            try {
-                await result(client.auth.signInWithOAuth({ provider, options: { redirectTo: `${location.origin}${location.pathname === '/en' ? '/en' : '/'}` } }));
-                return true;
-            } catch { failure(true); return false; }
-        },
+        signIn() { location.assign('/api/auth/login?return=' + (location.pathname === '/en' ? '/en' : '/')); },
         async signOut() {
-            const next = session;
             ready = false; ++epoch; again = false; clearTimeout(timer);
             if (running) await running;
-            try { await result(client.auth.signOut()); receive(null); }
-            catch { receive(next); failure(true); }
+            try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', cache: 'no-store' }); }
+            catch { failure(true); }
+            finally { receive(null); await authWork; }
         },
         remove(record) {
             try {
+                if (!enabled) return;
                 const uid = ready ? session.user.id : localStorage.getItem(userKey);
                 if (!uid) return;
-                const items = queue().filter(item => !(item.uid === uid && item.id === record.id));
-                items.push({ uid, id: record.id, updated: Date.now() });
+                const items = queue().filter(item => !(item.sub === uid && item.id === record.id));
+                items.push({ sub: uid, id: record.id, updated: Date.now() });
                 localStorage.setItem(queueKey, JSON.stringify(items));
                 changed();
             } catch { failure(true); }
@@ -281,9 +369,19 @@ export function createCloud(config, local, ui) {
         },
         async download(record) {
             const uid = session?.user.id, generation = epoch;
-            const blob = await result(storage.download(path(uid, generation, record.id)));
+            check(uid, generation);
+            let id = record.driveFile || await findFile(uid, generation, record.id), blob;
+            if (!id) throw new Error('File unavailable');
+            try { blob = await drive(`${filePath(id)}?alt=media`, { format: 'blob' }, uid, generation); }
+            catch (error) {
+                if (error.status !== 404) throw error;
+                id = await findFile(uid, generation, record.id);
+                if (!id) throw new Error('File unavailable');
+                blob = await drive(`${filePath(id)}?alt=media`, { format: 'blob' }, uid, generation);
+            }
             check(uid, generation);
             await local.saveFile(record.id, blob, () => valid(uid, generation));
+            await local.change(record.id, current => current && valid(uid, generation) ? { ...current, driveFile: id } : undefined);
             check(uid, generation);
             return blob;
         },
