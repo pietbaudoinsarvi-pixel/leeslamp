@@ -4,7 +4,8 @@ import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from '
 import { createCloud } from './sync.js';
 import { createImportIndex, planDedupe } from './dedupe.js';
 import { buildQueries, lookup, cancelLookup } from './lookup.js';
-import { PROVIDERS, buildRequest, passageContext, ask, cancelAsk } from './ask.js';
+import { PROVIDERS, buildRequest, passageContext } from './ask.js';
+import { runAgent, cancelAgent, bookContextReader } from './agent.js';
 
 const STRINGS = {
     nl: {
@@ -32,6 +33,12 @@ const STRINGS = {
         askQuestion: 'Je vraag',
         askDefault: 'Leg deze passage uit.',
         askLoading: 'Uitleg wordt geschreven…',
+        agentSearch: 'Wikipedia doorzoeken: {term}',
+        agentRead: 'Wikipedia lezen: {term}',
+        agentWord: 'Wiktionary raadplegen: {term}',
+        agentBook: 'Meer uit het boek lezen…',
+        agentSources: 'Bronnen',
+        agentPrivacy: 'Wanneer het model iets opzoekt, worden de zoektermen die het kiest naar Wikipedia of Wiktionary gestuurd.',
         askPrice: 'Circa ${price} per vraag (500 invoer- en 500 uitvoertokens; werkelijk gebruik varieert).',
         askFree: 'Gratis laag, zonder betaalgegevens. Google stelt wel een daglimiet in.',
         askCheapest: 'Goedkoopste van deze modellen.',
@@ -255,6 +262,12 @@ const STRINGS = {
         askQuestion: 'Your question',
         askDefault: 'Explain this passage.',
         askLoading: 'Writing explanation…',
+        agentSearch: 'Searching Wikipedia: {term}',
+        agentRead: 'Reading Wikipedia: {term}',
+        agentWord: 'Looking up in Wiktionary: {term}',
+        agentBook: 'Reading more of the book…',
+        agentSources: 'Sources',
+        agentPrivacy: 'When the model looks something up, the search terms it chooses are sent to Wikipedia or Wiktionary.',
         askPrice: 'About ${price} per question (500 input and 500 output tokens; actual usage varies).',
         askFree: 'Free tier, no payment details needed. Google does apply a daily limit.',
         askCheapest: 'Cheapest of these models.',
@@ -1653,7 +1666,7 @@ function closePanels() {
 let selectedPassage = '', selectionDoc, selectionRange, selectionRoot, lookupGeneration = 0, askGeneration = 0;
 function closeLookup() {
     lookupGeneration++; askGeneration++;
-    cancelLookup(); cancelAsk();
+    cancelLookup(); cancelAgent();
     $('#lookup-button').hidden = $('#lookup-panel').hidden = true;
     $('#lookup-button').setAttribute('aria-expanded', 'false');
     if ($('#ask-dialog').open) $('#ask-dialog').close();
@@ -1723,7 +1736,7 @@ function setupLookup(session) {
         $('#lookup-term').textContent = queries.term;
         $('#lookup-panel').hidden = false;
         $('#lookup-button').setAttribute('aria-expanded', 'true');
-        $('#ask-answer').textContent = ''; $('#ask-status').replaceChildren(); $('#ask-question').value = '';
+        $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren(); $('#ask-status').replaceChildren(); $('#ask-question').value = '';
         updateAskButton();
         $('#lookup-result').replaceChildren(localize(el('p', 'lookup-loading'), 'lookupLoading'));
         $('#lookup-panel').focus({ preventScroll: true }); showBars();
@@ -1800,7 +1813,7 @@ function setupAsk(session) {
     listen(session, $('#ask-dialog'), 'close', () => { $('#ask-key').value = ''; original = null; });
     listen(session, $('#ask-dialog'), 'keydown', event => event.stopPropagation());
     listen(session, $('#ask-remove'), 'click', () => {
-        cancelAsk(); askGeneration++;
+        cancelAgent(); askGeneration++;
         $('#ask-status').replaceChildren();
         try {
             localStorage.removeItem('leeslamp.ask.key');
@@ -1826,7 +1839,7 @@ function setupAsk(session) {
             localStorage.setItem('leeslamp.ask.model', model);
             localStorage.setItem('leeslamp.ask.baseUrl', provider.baseUrl);
             localStorage.setItem('leeslamp.ask.key', key);
-            cancelAsk(); askGeneration++; $('#ask-status').replaceChildren(); updateAskButton(); $('#ask-dialog').close();
+            cancelAgent(); askGeneration++; $('#ask-status').replaceChildren(); updateAskButton(); $('#ask-dialog').close();
         } catch { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askStorage')); }
     });
     listen(session, $('#ask-form'), 'submit', async event => {
@@ -1834,18 +1847,31 @@ function setupAsk(session) {
         const config = askConfig();
         if (!config.key) { open(); return; }
         const generation = ++askGeneration;
-        $('#ask-answer').textContent = '';
+        $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren();
         $('#ask-status').replaceChildren(localize(el('span', 'lookup-loading'), 'askLoading'));
         const current = () => live(session) && generation === askGeneration && !$('#lookup-panel').hidden;
         const chapter = session.chapter || [...(session.article?.querySelectorAll('h1,h2,h3') || [])].filter(h => h.getBoundingClientRect().top <= 80).at(-1)?.textContent;
         try {
-            await ask({ ...config, ...passageContext(selectionRange, selectionRoot), passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
+            const context = passageContext(selectionRange, selectionRoot);
+            const result = await runAgent({ ...config, ...context, readMore: bookContextReader(selectionRange, selectionRoot, context), passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
                 book: { title: session.record.title, author: session.record.author }, chapter, language: lang, signal: session.controller.signal,
+                onStatus: (key, values) => { if (current()) $('#ask-status').replaceChildren(localize(el('span', 'lookup-loading'), key, values)); },
                 onText: text => { if (current()) { $('#ask-status').replaceChildren(); $('#ask-answer').append(document.createTextNode(text)); } } });
-            if (current()) $('#ask-status').replaceChildren();
+            if (current()) {
+                $('#ask-status').replaceChildren();
+                if (result.sources.length) {
+                    const list = el('ul');
+                    for (const source of result.sources) {
+                        const item = el('li'), link = el('a', '', source.title);
+                        link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+                        item.append(link); list.append(item);
+                    }
+                    $('#ask-sources').replaceChildren(localize(el('h3'), 'agentSources'), list);
+                }
+            }
         } catch (error) {
             if (current() && error.name !== 'AbortError') {
-                $('#ask-answer').textContent = '';
+                $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren();
                 $('#ask-status').replaceChildren(localize(el('span'), error.key || 'askNetwork'));
             }
         }

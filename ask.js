@@ -4,6 +4,10 @@ export const ADAPTERS = {
         headers: key => ({ Authorization: `Bearer ${key}` }),
         body: (model, system, content) => ({ model, messages: [{ role: 'system', content: system }, { role: 'user', content }], max_tokens: 2000, stream: true }),
         delta: event => event.choices?.[0]?.delta?.content || '',
+        tools: definitions => definitions.map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters } })),
+        reply: body => ({ message: body.choices?.[0]?.message, text: body.choices?.[0]?.message?.content || '',
+            calls: (body.choices?.[0]?.message?.tool_calls || []).map(call => ({ id: call.id, name: call.function?.name, input: call.function?.arguments })) }),
+        results: (message, results) => [message, ...results.map(({ id, result }) => ({ role: 'tool', tool_call_id: id, content: JSON.stringify(result) }))],
     },
     anthropic: {
         path: 'messages',
@@ -11,6 +15,10 @@ export const ADAPTERS = {
         body: (model, system, content) => ({ model, system, messages: [{ role: 'user', content }], max_tokens: 2000, stream: true,
             ...(model === 'claude-opus-5' ? { output_config: { effort: 'low' } } : {}) }),
         delta: event => event.type === 'content_block_delta' ? event.delta?.text || '' : '',
+        tools: definitions => definitions.map(({ name, description, parameters }) => ({ name, description, input_schema: parameters })),
+        reply: body => ({ message: { role: 'assistant', content: body.content }, text: (body.content || []).filter(block => block.type === 'text').map(block => block.text).join(''),
+            calls: (body.content || []).filter(block => block.type === 'tool_use').map(block => ({ id: block.id, name: block.name, input: block.input })) }),
+        results: (message, results) => [message, { role: 'user', content: results.map(({ id, result }) => ({ type: 'tool_result', tool_use_id: id, content: JSON.stringify(result) })) }],
     },
 };
 // Prices are the supplied input/output USD per million tokens. Unknown prices stay blank.
@@ -31,7 +39,7 @@ export const PROVIDERS = [
 const failure = key => Object.assign(new Error(key), { key });
 // Start at the range endpoints, never at the start of the book. One extra
 // character tells us whether the far budget boundary cuts through a word.
-export function passageContext(range, root) {
+export function passageContext(range, root, { before = 4000, after = 1500, raw = false } = {}) {
     const empty = { before: '', after: '' };
     try {
         if (!range || !root?.contains(range.startContainer) || !root.contains(range.endContainer)) return empty;
@@ -73,6 +81,7 @@ export function passageContext(range, root) {
                 previous = node; node = step(); start = node ? (backwards ? node.length : 0) : 0;
             }
             const text = (backwards ? chunks.reverse() : chunks).join('');
+            if (raw) return backwards ? text.slice(-budget) : text.slice(0, budget);
             if (text.length <= budget) return text;
             let clipped = backwards ? text.slice(-budget) : text.slice(0, budget);
             const pair = backwards ? text.slice(0, 2) : text.slice(-2);
@@ -81,8 +90,8 @@ export function passageContext(range, root) {
         };
         // About a page and a half back and half a page forward: the antecedent of "he" or "this"
         // is almost always behind the selection, and this stays far below the model's attention limit.
-        return { before: collect(range.startContainer, range.startOffset, true, 4000),
-            after: collect(range.endContainer, range.endOffset, false, 1500) };
+        return { before: collect(range.startContainer, range.startOffset, true, before),
+            after: collect(range.endContainer, range.endOffset, false, after) };
     } catch { return empty; } // Detached/unavailable reader documents must not prevent an explanation.
 }
 export function buildRequest(provider, { before = '', passage, after = '', question, book = {}, chapter, language, model, key }) {
@@ -130,7 +139,7 @@ let pending;
 export function cancelAsk() { pending?.abort(); pending = null; }
 export async function ask(options, fetchImpl = fetch) {
     cancelAsk();
-    const request = buildRequest(options.provider, options);
+    const request = options.request || buildRequest(options.provider, options);
     const controller = new AbortController(); pending = controller;
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000), ...(options.signal ? [options.signal] : [])]);
     const state = { buffer: '', done: false };

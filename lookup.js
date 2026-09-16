@@ -59,6 +59,26 @@ export function inflectionOf(text, term) {
     return null;
 }
 export function cancelLookup() { pending?.abort(); pending = null; }
+// Plain snippets, including numeric and common HTML entities, without a DOM.
+export function plainSnippet(value) {
+    const entities = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' };
+    return String(value || '').replace(/<[^>]*>/g, '').replace(/&(#x[\da-f]+|#\d+|amp|quot|apos|lt|gt|nbsp);/gi, (match, code) => {
+        if (code[0] !== '#') return entities[code.toLowerCase()];
+        const point = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : Number(code.slice(1));
+        return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : '';
+    }).replace(/<[^>]*>/g, '');
+}
+export async function searchWikipedia(query, language, json) {
+    const result = await json(`https://${language}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json&origin=*`);
+    return (result?.query?.search || []).slice(0, 5).map(hit => ({ title: String(hit.title).slice(0, 300), snippet: plainSnippet(hit.snippet).slice(0, 500) }));
+}
+export async function readWikipedia(title, language, json) {
+    const result = await json(`https://${language}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exchars=4000&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*`);
+    const page = Object.values(result?.query?.pages || {})[0];
+    return page?.extract ? { title: page.title || title, text: page.extract.slice(0, 4000),
+        // Wikipedia's canonical article URLs use underscores, not percent-encoded spaces.
+        url: `https://${language}.wikipedia.org/wiki/${encodeURIComponent(String(page.title || title).replace(/ /g, '_'))}` } : { error: 'No article found.' };
+}
 export async function lookup(selection, lang, fetchImpl = fetch) {
     cancelLookup();
     const queries = buildQueries(selection, lang);
@@ -66,39 +86,18 @@ export async function lookup(selection, lang, fetchImpl = fetch) {
     const key = queries.lang + ':' + queries.term;
     if (cache.has(key)) return cache.get(key);
     const controller = new AbortController(); pending = controller;
-    const json = async (url, rest = false) => {
-        const response = await fetchImpl(url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
-            ...(rest ? { headers: { 'Api-User-Agent': 'Leeslamp/1.0 (https://leeslamp.vercel.app)' } } : {}) });
-        if (response.status === 404) return null;
-        if (!response.ok) throw new Error('lookupNetwork');
-        return response.json();
-    };
+    const json = lookupJSON(controller.signal, fetchImpl);
     const wikipedia = async language => {
         const root = `https://${language}.wikipedia.org`;
         const summary = title => json(`${root}/api/rest_v1/page/summary/${encodeURIComponent(title)}`, true);
         const title = queries.term[0].toLocaleUpperCase(language) + queries.term.slice(1);
         let result = pickWikipedia(await summary(title));
         if (result) return result;
-        const search = await json(`${root}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(queries.wikipedia)}&format=json&origin=*`);
-        const hit = pickWikipedia(null, search);
+        const search = await searchWikipedia(queries.wikipedia, language, json);
+        const hit = search[0]?.title;
         return hit ? pickWikipedia(await summary(hit)) : null;
     };
-    const entry = async (language, word) => {
-        const response = await json(`https://${language}.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(word)}&format=json&origin=*`);
-        return pickWiktionary(Object.values(response?.query?.pages || {})[0]?.extract, language);
-    };
-    const wiktionary = async language => {
-        let word = queries.wiktionary, title = queries.term;
-        let text = await entry(language, word);
-        // "passes: plural of pass" is a pointer, not a meaning: follow it once.
-        const lemma = inflectionOf(text, word);
-        if (lemma) {
-            const better = await entry(language, lemma);
-            if (better) { text = better; title = `${queries.term} · ${lemma}`; word = lemma; }
-        }
-        return text ? { kind: 'wiktionary', title, text,
-            url: `https://${language}.wiktionary.org/wiki/${encodeURIComponent(word)}` } : null;
-    };
+    const wiktionary = language => readWiktionary(queries.wiktionary, language, json);
     try {
         let failed = false;
         for (const language of queries.lang === 'en' ? ['en'] : [queries.lang, 'en']) {
@@ -118,4 +117,32 @@ export async function lookup(selection, lang, fetchImpl = fetch) {
         if (cache.size > 64) cache.delete(cache.keys().next().value);
         return null;
     } finally { if (pending === controller) pending = null; }
+}
+
+export function lookupJSON(signal, fetchImpl = fetch) {
+    return async (url, rest = false) => {
+        const response = await fetchImpl(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+            redirect: 'error', credentials: 'omit',
+            ...(rest ? { headers: { 'Api-User-Agent': 'Leeslamp/1.0 (https://leeslamp.vercel.app)' } } : {}) });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error('lookupNetwork');
+        return response.json();
+    };
+}
+
+export async function readWiktionary(word, language, json, onRead = () => {}) {
+    const entry = async term => {
+        const response = await json(`https://${language}.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(term)}&format=json&origin=*`);
+        const text = pickWiktionary(Object.values(response?.query?.pages || {})[0]?.extract, language);
+        if (text) onRead({ title: term, url: `https://${language}.wiktionary.org/wiki/${encodeURIComponent(term)}` });
+        return text;
+    };
+    let title = word, text = await entry(word);
+    const lemma = inflectionOf(text, word);
+    if (lemma) {
+        const better = await entry(lemma);
+        if (better) { text = better; title = `${word} · ${lemma}`; word = lemma; }
+    }
+    return text ? { kind: 'wiktionary', title, text,
+        url: `https://${language}.wiktionary.org/wiki/${encodeURIComponent(word)}` } : null;
 }

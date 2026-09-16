@@ -233,6 +233,7 @@
     #ask-dialog::backdrop { background:#18251c66; }
     #ask-dialog label { display:block; margin:16px 0 8px; }
     #ask-price,#ask-stored-key { font-size:12px; color:var(--mute); }
+    #ask-status { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     #ask-answer { white-space:pre-wrap; }
     #lookup-button { --safe-top:env(safe-area-inset-top,0px); --safe-right:env(safe-area-inset-right,0px); --safe-bottom:env(safe-area-inset-bottom,0px); --safe-left:env(safe-area-inset-left,0px); }
     .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--rline); padding-bottom:16px; margin-bottom:20px; }
@@ -475,6 +476,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
         <button id="ask-settings" type="button" data-i18n="askSetup" hidden>Uitleg instellen</button>
       </form>
       <p id="ask-status" role="status"></p><p id="ask-answer" aria-live="polite"></p>
+      <div id="ask-sources"></div>
     </aside>
     <dialog id="ask-dialog" aria-labelledby="ask-title">
       <form id="ask-settings-form">
