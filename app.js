@@ -2,6 +2,7 @@ import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
 import { createCloud } from './sync.js';
+import { bookKey, planDedupe } from './dedupe.js';
 
 const STRINGS = {
     nl: {
@@ -135,6 +136,10 @@ const STRINGS = {
         importProgress: 'Importeren… {current}/{total}',
         addedOne: '{count} boek toegevoegd',
         addedOther: '{count} boeken toegevoegd',
+        alreadyInLibraryOne: '{count} stond al in de bibliotheek',
+        alreadyInLibraryOther: '{count} stonden al in de bibliotheek',
+        duplicatesMergedOne: '{count} dubbel boek samengevoegd',
+        duplicatesMergedOther: '{count} dubbele boeken samengevoegd',
         scanFolder: 'Scannen… {name}',
         scanProgress: 'Scannen… {current}/{total}',
         scanResult: '{found} boeken gevonden, {added} nieuw',
@@ -309,6 +314,10 @@ const STRINGS = {
         importProgress: 'Importing… {current}/{total}',
         addedOne: '{count} book added',
         addedOther: '{count} books added',
+        alreadyInLibraryOne: '{count} was already in your library',
+        alreadyInLibraryOther: '{count} were already in your library',
+        duplicatesMergedOne: '{count} duplicate merged',
+        duplicatesMergedOther: '{count} duplicates merged',
         scanFolder: 'Scanning… {name}',
         scanProgress: 'Scanning… {current}/{total}',
         scanResult: '{found} books found, {added} new',
@@ -1125,14 +1134,34 @@ async function importFiles(files, categoryForFile) {
         if (category === null) { setImporting(false); return; }
         categoryForFile = () => category;
     }
-    let count = 0;
+    let count = 0, duplicates = 0;
     const failures = [];
     const pipeline = categoryPipeline();
     let lastRender = performance.now();
+    // One entry per file already in the library, so the same file never becomes a second book.
+    const known = new Map();
+    for (const record of books) {
+        const key = record.hidden === true ? '' : bookKey(record);
+        if (key && !known.has(key)) known.set(key, record);
+    }
     for (const [index, file] of [...files].entries()) {
         toast(() => t('importProgress', { current: index + 1, total: files.length }), 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
         if (!kind) { failures.push(() => t('unsupportedFile', { name: file.name })); continue; }
+        const key = bookKey({ name: file.name, ext, size: file.size });
+        const present = known.get(key);
+        if (present) {
+            try {
+                // The book is already there; an unreadable copy gets these bytes instead of a second card.
+                if (!localFiles.has(present.id) && !localSource(present)) {
+                    await tx('files', 'readwrite', store => store.put({ id: present.id, file }));
+                    localFiles.add(present.id);
+                }
+                duplicates++;
+            } catch (error) { console.error(error); failures.push(() => failureMessage(() => t('importFailedFile', { name: file.name }), error)); }
+            await yieldUI();
+            continue;
+        }
         try {
             const category = categoryForFile(file);
             const record = newRecord(file, category === AUTO_CATEGORY ? '' : category, { kind: 'blob' });
@@ -1144,6 +1173,7 @@ async function importFiles(files, categoryForFile) {
             pipeline.local(record);
             await bookTransaction(record, file);
             books.push(record);
+            if (key) known.set(key, record);
             count++;
             pipeline.remember(record.category);
             await pipeline.enqueue(record);
@@ -1153,9 +1183,15 @@ async function importFiles(files, categoryForFile) {
     }
     try { await pipeline.flush(); }
     catch (error) { report(() => t('categoryFailed'), error); }
+    let merged = 0;
+    try { merged = await dedupeLibrary(true); }
+    catch (error) { console.warn('Duplicate merge unavailable', error); }
     setImporting(false);
     renderLibrary();
-    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    const summary = t(count === 1 ? 'addedOne' : 'addedOther', { count })
+        + (duplicates ? ` · ${t(duplicates === 1 ? 'alreadyInLibraryOne' : 'alreadyInLibraryOther', { count: duplicates })}` : '')
+        + categorySummary(pipeline) + duplicateSummary(merged);
+    toast(() => [summary, ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
 
 // File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
@@ -1180,13 +1216,49 @@ async function enumerate(directory, entries, prefix = '', category = '') {
 }
 const writeBookBatch = async (records, removed = []) => {
     for (const record of records) record.updated = Date.now();
-    await tx('books', 'readwrite', store => {
-        for (const record of records) store.put(record);
-        for (const record of removed) store.delete(record.id);
+    await recoverStorage(async () => {
+        const db = await database();
+        await new Promise((resolve, reject) => {
+            const transaction = db.transaction(['books', 'files'], 'readwrite');
+            transaction.oncomplete = resolve;
+            transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('storageFailed')));
+            const store = transaction.objectStore('books'), fileStore = transaction.objectStore('files');
+            for (const record of records) store.put(record);
+            for (const record of removed) { store.delete(record.id); fileStore.delete(record.id); }
+        });
     });
-    for (const record of removed) cloud?.remove(record);
+    for (const record of removed) { localFiles.delete(record.id); cloud?.remove(record); }
     cloud?.changed();
 };
+const localSource = record => record.source?.kind === 'fs' && roots.some(root => root.id === record.source.root);
+// Merge copies of one file into a single book: progress, category, metadata and cover are kept,
+// the file on disk is never touched and a copy from a linked folder is hidden instead of deleted.
+let dedupeWork = Promise.resolve(0);
+const dedupeLibrary = (force = false) => dedupeWork = dedupeWork.catch(() => 0)
+    .then(() => importing && !force ? 0 : mergeDuplicates());
+async function mergeDuplicates() {
+    const plan = planDedupe(books, { activeId: active?.record.id ?? null,
+        hasFile: id => localFiles.has(id), reachable: localSource });
+    if (!plan.updates.length && !plan.removals.length) return 0;
+    for (const { from, to } of plan.transfers) {
+        const file = (await get('files', from))?.file;
+        if (!file) continue;
+        await tx('files', 'readwrite', store => store.put({ id: to, file }));
+        localFiles.add(to);
+    }
+    for (const { record, changes } of plan.updates) Object.assign(record, changes);
+    await writeBookBatch(plan.updates.map(item => item.record), plan.removals);
+    const removed = new Set(plan.removals.map(record => record.id));
+    if (removed.size) {
+        books = books.filter(record => !removed.has(record.id));
+        for (const id of removed) presentedBooks.delete(id);
+    }
+    const hidden = plan.updates.filter(item => item.changes.hidden === true).length;
+    renderLibrary();
+    return removed.size + hidden;
+}
+const duplicateSummary = count => count
+    ? ` · ${t(count === 1 ? 'duplicatesMergedOne' : 'duplicatesMergedOther', { count })}` : '';
 async function scanRoots(selected) {
     const work = [], failures = [];
     let found = 0, added = 0, lastRender = 0;
@@ -1265,9 +1337,13 @@ async function scanRoots(selected) {
         refresh(); await yieldUI();
     }
     await pipeline.flush();
+    let merged = 0;
+    try { merged = await dedupeLibrary(true); }
+    catch (error) { console.warn('Duplicate merge unavailable', error); }
     refresh(true);
-    toast(() => [t('scanResult', { found, added }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
-    return { found, added, failures: failures.map(message => message()) };
+    toast(() => [t('scanResult', { found, added }) + categorySummary(pipeline) + duplicateSummary(merged),
+        ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    return { found, added, merged, failures: failures.map(message => message()) };
 }
 async function linkFolder(handle) {
     if (importing || $('#category-dialog').open) throw new Error(t('importRunning'));
@@ -2091,6 +2167,8 @@ async function setupCloud() {
     cloud = createCloud({
         all: () => all('books'), get: id => get('books', id), change: cloudChange,
         file: async id => (await get('files', id))?.file,
+        // A second device syncs its own copy of a book; merge before pushing so both sides settle.
+        dedupe: () => dedupeLibrary(),
         async saveFile(id, file, valid) {
             await tx('files', 'readwrite', store => { if (valid()) return store.put({ id, file }); });
             if (valid()) { localFiles.add(id); renderLibrary(); }
@@ -2126,7 +2204,6 @@ async function setupCloud() {
         },
     });
     if (!await cloud.start()) { cloud = null; return; }
-    for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
     const note = $('.device-note');
     note.querySelector(':scope > .icon').remove(); note.querySelector(':scope > span').remove();
     note.prepend(row);
@@ -2147,10 +2224,15 @@ applyLanguage(); syncPreferences();
 try {
     books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
     roots = await all('roots');
+    for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
     setImporting(false); renderLibrary();
 }
 catch (error) { report(() => t('libraryFailed'), error); }
-setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
+// A merge before the account is known would delete a book locally without telling the cloud.
+setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); }).then(async () => {
+    const merged = await dedupeLibrary();
+    if (merged) toast(() => t(merged === 1 ? 'duplicatesMergedOne' : 'duplicatesMergedOther', { count: merged }));
+}).catch(error => console.warn('Duplicate merge unavailable', error));
 window.__leeslamp = { linkFolder, rescan };
 async function registerServiceWorker() {
     if (!navigator.serviceWorker) return;

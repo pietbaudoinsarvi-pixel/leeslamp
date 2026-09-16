@@ -344,6 +344,9 @@ export function createCloud(local, ui) {
                     await local.flush();
                     check(uid, generation);
                     await pull(uid, generation);
+                    check(uid, generation);
+                    // A book that arrived twice under two ids is merged before its removal is pushed.
+                    await local.dedupe?.();
                     await drain(uid, generation);
                     // ponytail: small race between pull and push; add per-field merge if it ever bites.
                     await push(uid, generation);
