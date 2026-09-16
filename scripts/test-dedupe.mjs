@@ -189,5 +189,28 @@ assert.equal(stranded.localBooks.get('keeper').driveFile, 'drive-2');
 // Different formats of one title are never merged.
 const formats = planDedupe([copy('a', { ext: 'epub', name: 'boek.epub' }), copy('b', { ext: 'pdf', name: 'boek.pdf', title: copy('a').title })], roots);
 assert.equal(formats.total, 0);
-console.log('PASS: driveFile travels to other devices; formats never merge.');
+// One book in two formats: only with a metadata title AND an author, and the epub wins.
+const book = { title: 'The Dimensions of Paradise', author: 'John Michell', metadataReady: true };
+const asEpub = (id, extra = {}) => copy(id, { ...book, ext: 'epub', name: 'michell.epub', size: 3000000, ...extra });
+const asPdf = (id, extra = {}) => copy(id, { ...book, ext: 'pdf', name: 'michell.pdf', size: 9000000, ...extra });
+const mixed = planDedupe([asEpub('e'), asPdf('p')], roots);
+assert.equal(mixed.total, 1);
+assert.equal(mixed.groups[0].keep.id, 'e', 'the epub is kept');
+assert.equal(mixed.groups[0].drop[0].id, 'p');
+// A PDF in the linked folder still loses to an epub that only exists as a copy.
+const folderPdf = planDedupe([asEpub('e'), asPdf('p', { source: { kind: 'fs', root: 'root', path: 'p.pdf' } })], roots);
+assert.equal(folderPdf.groups[0].keep.id, 'e');
+// The PDF's Drive file is not the epub's file and must never be adopted.
+const donorPdf = planDedupe([asEpub('e'), asPdf('p', { cloudFile: true, driveFile: 'drive-pdf' })], roots);
+assert.equal(donorPdf.groups[0].keep.driveFile, undefined);
+assert.equal(donorPdf.groups[0].drop[0].keepFile, false);
+// Same format still transfers.
+const donorEpub = planDedupe([asEpub('e'), asEpub('e2', { cloudFile: true, driveFile: 'drive-epub', size: 3000000 })], roots);
+assert.equal(donorEpub.groups[0].keep.driveFile, 'drive-epub');
+// Not enough evidence: a different author, no author at all, or a title taken from the filename.
+assert.equal(planDedupe([asEpub('e'), asPdf('p', { author: 'Someone Else' })], roots).total, 0);
+assert.equal(planDedupe([asEpub('e', { author: '' }), asPdf('p', { author: '' })], roots).total, 0);
+assert.equal(planDedupe([asEpub('e', { metadataReady: false }), asPdf('p', { metadataReady: false })], roots).total, 0);
+assert.equal(planDedupe([asEpub('e', { title: 'michell' }), asPdf('p', { title: 'michell' })], roots).total, 0);
+console.log('PASS: driveFile travels to other devices; one book in two formats merges to the epub without adopting the pdf file.');
 console.log('PASS: all dedupe tests (Node built-ins only; no network).');

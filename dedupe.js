@@ -11,8 +11,11 @@ const keys = (record, metadataOnly) => {
     // Older records do not retain title provenance. A filename fallback is not
     // evidence of a metadata title, even when metadata parsing succeeded.
     const metadataTitle = record.metadataReady === true && title && title !== name;
+    // Across formats the bytes differ, so only a metadata title plus a real author is evidence.
+    const author = normalizeIdentity(record.author);
     return [name && `n:${scope}:${name}`,
-        title && (!metadataOnly || metadataTitle) && `t:${scope}:${title}`].filter(Boolean);
+        title && (!metadataOnly || metadataTitle) && `t:${scope}:${title}`,
+        !metadataOnly && metadataTitle && author && `x:${title}|${author}`].filter(Boolean);
 };
 export function createImportIndex(records) {
     const identities = new Set();
@@ -51,11 +54,13 @@ export function planDedupe(records, roots) {
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key).push(record);
     });
+    const reflowable = record => normalizeIdentity(record.ext) === 'pdf' ? 0 : 1;
     const priority = record => record.source?.kind === 'fs' && rootIds.has(record.source.root) ? 2 : record.cloudFile === true ? 1 : 0;
     const updated = record => Number.isFinite(record.updated) ? record.updated : 0;
     const fraction = record => Number.isFinite(record.fraction) ? record.fraction : 0;
-    const better = (a, b) => priority(a) > priority(b) || priority(a) === priority(b)
-        && (updated(a) > updated(b) || updated(a) === updated(b) && a.id < b.id);
+    const better = (a, b) => reflowable(a) > reflowable(b) || reflowable(a) === reflowable(b)
+        && (priority(a) > priority(b) || priority(a) === priority(b)
+        && (updated(a) > updated(b) || updated(a) === updated(b) && a.id < b.id));
     const groups = [];
     let total = 0;
     for (const group of buckets.values()) {
@@ -72,7 +77,8 @@ export function planDedupe(records, roots) {
             category: category?.category || '', categoryManual: !!manual,
             cover: original.cover || group.find(record => record.cover)?.cover || null };
         if (keep.cloudFile !== true) {
-            const donor = drop.find(record => record.cloudFile === true);
+            const donor = drop.find(record => record.cloudFile === true
+                && normalizeIdentity(record.ext) === normalizeIdentity(keep.ext));
             if (donor) {
                 Object.assign(keep, { driveFile: donor.driveFile, cloudFile: true, fileSynced: true });
                 donor.keepFile = true;
