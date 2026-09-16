@@ -101,6 +101,8 @@ const STRINGS = {
         narrower: 'Smallere tekst',
         widthSetting: 'Breedtestand',
         layout: 'Weergave',
+        columns: 'Pagina’s',
+        columnsLabel: 'Aantal pagina’s naast elkaar',
         layoutLabel: 'Pagina of scrollen',
         page: 'Pagina',
         scroll: 'Scrollen',
@@ -275,6 +277,8 @@ const STRINGS = {
         narrower: 'Narrower text',
         widthSetting: 'Width setting',
         layout: 'Layout',
+        columns: 'Pages',
+        columnsLabel: 'Number of pages side by side',
         layoutLabel: 'Page or scroll',
         page: 'Page',
         scroll: 'Scroll',
@@ -529,7 +533,7 @@ const THEMES = {
     zwart: { bg: '#000000', fg: '#bdc5bc', link: '#a9c9b9', dark: true },
 };
 const fonts = ['Lora', 'Lato', 'Georgia', 'Lexend', 'Boek'];
-const defaults = { theme: 'dag', font: 'Lora', size: 18, lh: 1.5, width: 2, flow: 'paginated', justify: true };
+const defaults = { theme: 'dag', font: 'Lora', size: 18, lh: 1.5, width: 2, columns: 2, flow: 'paginated', justify: true };
 let savedPrefs;
 try { savedPrefs = JSON.parse(readSetting('leeslamp.prefs', '{}')); } catch { savedPrefs = {}; }
 const prefs = { ...defaults, ...savedPrefs };
@@ -538,6 +542,7 @@ if (!fonts.includes(prefs.font)) prefs.font = defaults.font;
 prefs.size = Math.round(clamp(prefs.size, 12, 32));
 prefs.lh = Math.round(clamp(prefs.lh, 1.2, 2) * 10) / 10;
 prefs.width = Math.round(clamp(prefs.width, 1, 4));
+prefs.columns = prefs.columns === 1 ? 1 : 2;
 prefs.flow = prefs.flow === 'scrolled' ? 'scrolled' : 'paginated';
 prefs.justify = typeof prefs.justify === 'boolean' ? prefs.justify : true;
 const widthPx = () => ({ 1: 1100, 2: 900, 3: 760, 4: 640 })[prefs.width];
@@ -1955,9 +1960,11 @@ function syncPreferences() {
     $('#themes').style.setProperty('--selected', Object.keys(THEMES).indexOf(prefs.theme));
     $('#fonts').style.setProperty('--selected', fonts.indexOf(prefs.font));
     $('#flows').style.setProperty('--selected', prefs.flow === 'paginated' ? 0 : 1);
+    $('#columns').style.setProperty('--selected', prefs.columns === 1 ? 0 : 1);
     for (const node of $('#themes').children) node.setAttribute('aria-pressed', String(node.dataset.theme === prefs.theme));
     for (const node of $('#fonts').children) node.setAttribute('aria-pressed', String(node.dataset.font === prefs.font));
     for (const node of $('#flows').children) node.setAttribute('aria-pressed', String(node.dataset.flow === prefs.flow));
+    for (const node of $('#columns').children) node.setAttribute('aria-pressed', String(Number(node.dataset.columns) === prefs.columns));
     for (const key of ['size', 'lh', 'width']) $(`#${key}-value`).value = prefs[key];
     const limits = { size: [12, 32], lh: [1.2, 2], width: [1, 4] };
     for (const button of $('#prefs').querySelectorAll('[data-step]')) {
@@ -1966,6 +1973,8 @@ function syncPreferences() {
     }
     $('#justify').checked = prefs.justify;
     $('#flow-row').hidden = active?.record.kind !== 'foliate';
+    // Two pages side by side only exist in paginated flow.
+    $('#columns-row').hidden = active?.record.kind !== 'foliate' || prefs.flow !== 'paginated';
     $('#justify-row').hidden = active?.record.kind === 'pdf';
 }
 function applyPreferences(changed) {
@@ -1976,12 +1985,12 @@ function applyPreferences(changed) {
     reader.style.colorScheme = theme.dark ? 'dark' : 'light'; reader.dataset.dark = theme.dark;
     const renderer = active?.view?.renderer;
     if (renderer) {
-        if (!changed || ['flow', 'width'].includes(changed)) {
-            renderer.setAttribute('flow', prefs.flow); renderer.setAttribute('max-column-count', '2');
+        if (!changed || ['flow', 'width', 'columns'].includes(changed)) {
+            renderer.setAttribute('flow', prefs.flow); renderer.setAttribute('max-column-count', String(prefs.columns));
             renderer.setAttribute('max-inline-size', widthPx()); renderer.setAttribute('gap', '6%'); renderer.setAttribute('margin', '56px');
             renderer.setAttribute('animated', '');
         }
-        if (!changed || !['flow', 'width'].includes(changed)) {
+        if (!changed || !['flow', 'width', 'columns'].includes(changed)) {
             if (renderer.setStyles) renderer.setStyles(bookCSS());
             if (changed === 'justify' && !active.view.isFixedLayout) for (const { doc } of renderer.getContents()) applyJustify(doc);
             else for (const { doc } of renderer.getContents()) styleFixedDocument(doc);
@@ -2003,6 +2012,7 @@ $('#prefs').addEventListener('click', e => {
     if (!button) return;
     let changed;
     for (const key of ['theme', 'font', 'flow']) if (button.dataset[key]) { prefs[key] = button.dataset[key]; changed = key; }
+    if (button.dataset.columns) { prefs.columns = Number(button.dataset.columns); changed = 'columns'; }
     if (button.dataset.step) {
         const [key, delta] = button.dataset.step.split(':');
         const [min, max] = { size: [12, 32], lh: [1.2, 2], width: [1, 4] }[key];

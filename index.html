@@ -236,8 +236,8 @@
     .stepper output { width:44px; text-align:center; font-size:15px; font-variant-numeric:tabular-nums; }
     .stepper button { font-size:18px; width:32px; padding:4px; }
     #flow-row { margin-top:20px; }
-    #flows { --options:2; }
-    #flows button { font-size:12px; }
+    #flows,#columns { --options:2; }
+    #flows button,#columns button { font-size:12px; }
     #justify-row { display:flex; align-items:center; justify-content:space-between; margin-top:20px; font-size:12px; }
     #justify { appearance:none; width:18px; height:18px; margin:0; border:1px solid var(--rmuted); border-radius:0; display:grid; place-content:center; cursor:pointer; }
     #justify::before { content:''; width:8px; height:8px; background:var(--rfg); transform:scale(0); transition:transform 150ms var(--ease); }
@@ -441,6 +441,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <div class="stepper"><span data-i18n="lineHeight">Regelafstand</span><button data-step="lh:-0.1" title="Kleinere regelafstand" aria-label="Kleinere regelafstand" data-i18n="" data-i18n-title="lessLineHeight" data-i18n-aria-label="lessLineHeight">−</button><output id="lh-value" aria-label="Regelafstand" data-i18n="" data-i18n-aria-label="lineHeight">1.5</output><button data-step="lh:0.1" title="Grotere regelafstand" aria-label="Grotere regelafstand" data-i18n="" data-i18n-title="moreLineHeight" data-i18n-aria-label="moreLineHeight">+</button></div>
       <div class="stepper"><span data-i18n="width">Tekstbreedte</span><button data-step="width:-1" title="Bredere tekst" aria-label="Bredere tekst" data-i18n="" data-i18n-title="wider" data-i18n-aria-label="wider">−</button><output id="width-value" aria-label="Breedtestand" data-i18n="" data-i18n-aria-label="widthSetting">2</output><button data-step="width:1" title="Smallere tekst" aria-label="Smallere tekst" data-i18n="" data-i18n-title="narrower" data-i18n-aria-label="narrower">+</button></div>
       <div id="flow-row"><span class="pref-label" data-i18n="layout">Weergave</span><div id="flows" class="segments" role="group" aria-label="Pagina of scrollen" data-i18n="" data-i18n-aria-label="layoutLabel"><button data-flow="paginated" data-i18n="page">Pagina</button><button data-flow="scrolled" data-i18n="scroll">Scrollen</button></div></div>
+      <div id="columns-row"><span class="pref-label" data-i18n="columns">Pagina’s</span><div id="columns" class="segments" role="group" aria-label="Aantal pagina’s naast elkaar" data-i18n="" data-i18n-aria-label="columnsLabel"><button data-columns="1">1</button><button data-columns="2">2</button></div></div>
       <label id="justify-row"><span data-i18n="justify">Tekst uitvullen</span><input id="justify" type="checkbox" checked></label>
     </aside>
   </section>

@@ -26,7 +26,7 @@ Deploy op Vercel als statische site, zonder buildopdracht; publiceer de reposito
 Los geïmporteerde boeken en voortgang blijven in IndexedDB op dit apparaat; voorkeuren staan in localStorage.
 Importeer via Importeren of slepen. Automatisch deelt elk boek afzonderlijk in; je kunt ook voor de hele selectie een categorie, Geen categorie of + Nieuwe categorie… kiezen.
 Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart open je de boekacties, waaronder de categoriekeuze.
-Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk.
+Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk. Onder Aa kies je bij Pagina's of het boek als een of twee pagina's naast elkaar wordt getoond; Tekstbreedte begrenst de breedte per pagina.
 De app werkt offline na de eerste online laadbeurt; PDF/DOCX/Markdown en fonts moeten eerst online geladen zijn.
 Vereist een moderne browser met native adoptedStyleSheets; HTTPS of localhost voor PWA, PNG-iconen volgen apart.
 
