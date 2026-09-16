@@ -4,7 +4,7 @@ import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from '
 import { createCloud } from './sync.js';
 import { createImportIndex, planDedupe } from './dedupe.js';
 import { buildQueries, lookup, cancelLookup } from './lookup.js';
-import { PROVIDERS, buildRequest, ask, cancelAsk } from './ask.js';
+import { PROVIDERS, buildRequest, passageContext, ask, cancelAsk } from './ask.js';
 
 const STRINGS = {
     nl: {
@@ -1641,7 +1641,7 @@ function closePanels() {
     $('#toc-button').setAttribute('aria-expanded', 'false');
     if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : focusedPanel.id === 'lookup-panel' ? '#reader' : '#toc-button').focus({ preventScroll: true });
 }
-let selectedPassage = '', selectionDoc, lookupGeneration = 0, askGeneration = 0;
+let selectedPassage = '', selectionDoc, selectionRange, selectionRoot, lookupGeneration = 0, askGeneration = 0;
 function closeLookup() {
     lookupGeneration++; askGeneration++;
     cancelLookup(); cancelAsk();
@@ -1649,7 +1649,7 @@ function closeLookup() {
     $('#lookup-button').setAttribute('aria-expanded', 'false');
     if ($('#ask-dialog').open) $('#ask-dialog').close();
     selectionDoc?.getSelection()?.removeAllRanges();
-    selectedPassage = ''; selectionDoc = null;
+    selectedPassage = ''; selectionDoc = null; selectionRange = selectionRoot = null;
 }
 function hookSelection(session, doc, root = doc.body) {
     const changed = () => {
@@ -1657,11 +1657,17 @@ function hookSelection(session, doc, root = doc.body) {
         const selection = doc.getSelection();
         if (!selection?.rangeCount || selection.isCollapsed || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)
             || !buildQueries(selection.toString(), lang)) {
-            if (selectionDoc === doc) { $('#lookup-button').hidden = true; selectedPassage = ''; }
+            if (selectionDoc === doc) { $('#lookup-button').hidden = true; selectedPassage = ''; selectionRange = selectionRoot = null; }
             return;
         }
         selectedPassage = selection.toString().trim(); selectionDoc = doc;
         const range = selection.getRangeAt(0).cloneRange();
+        selectionRange = range.cloneRange();
+        // PDF context stays inside this page's text layer; text and Foliate
+        // already supply their article or section body as the root.
+        selectionRoot = root.id === 'pdf'
+            ? (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement)?.closest('.textLayer')
+            : root;
         range.collapse(false);
         const rects = [...selection.getRangeAt(0).getClientRects()];
         const caret = range.getBoundingClientRect();
@@ -1700,10 +1706,10 @@ function updateAskButton() {
 function setupLookup(session) {
     listen(session, $('#lookup-button'), 'pointerdown', event => event.preventDefault());
     listen(session, $('#lookup-button'), 'click', async () => {
-        const passage = selectedPassage, doc = selectionDoc;
+        const passage = selectedPassage, doc = selectionDoc, range = selectionRange, root = selectionRoot;
         const queries = buildQueries(passage, lang);
         if (!queries) return;
-        closePanels(); selectedPassage = passage; selectionDoc = doc;
+        closePanels(); selectedPassage = passage; selectionDoc = doc; selectionRange = range; selectionRoot = root;
         const generation = ++lookupGeneration;
         $('#lookup-term').textContent = queries.term;
         $('#lookup-panel').hidden = false;
@@ -1824,7 +1830,7 @@ function setupAsk(session) {
         const current = () => live(session) && generation === askGeneration && !$('#lookup-panel').hidden;
         const chapter = session.chapter || [...(session.article?.querySelectorAll('h1,h2,h3') || [])].filter(h => h.getBoundingClientRect().top <= 80).at(-1)?.textContent;
         try {
-            await ask({ ...config, passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
+            await ask({ ...config, ...passageContext(selectionRange, selectionRoot), passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
                 book: { title: session.record.title, author: session.record.author }, chapter, language: lang, signal: session.controller.signal,
                 onText: text => { if (current()) { $('#ask-status').replaceChildren(); $('#ask-answer').append(document.createTextNode(text)); } } });
             if (current()) $('#ask-status').replaceChildren();

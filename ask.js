@@ -29,15 +29,71 @@ export const PROVIDERS = [
     { id: 'custom', label: 'askOther', adapter: 'openai', baseUrl: '', models: [], keyHint: '' },
 ];
 const failure = key => Object.assign(new Error(key), { key });
-export function buildRequest(provider, { passage, question, book = {}, chapter, language, model, key }) {
+// Start at the range endpoints, never at the start of the book. One extra
+// character tells us whether the far budget boundary cuts through a word.
+export function passageContext(range, root) {
+    const empty = { before: '', after: '' };
+    try {
+        if (!range || !root?.contains(range.startContainer) || !root.contains(range.endContainer)) return empty;
+        const block = node => node.parentElement?.closest('p,div,li,blockquote,h1,h2,h3,h4,h5,h6,pre,td,section,article');
+        const separator = (left, right) => block(left) !== block(right)
+            || left.parentElement?.nextSibling?.nodeName === 'BR'
+            || right.parentElement?.previousSibling?.nodeName === 'BR' ? '\n' : '';
+        const collect = (container, offset, backwards, budget) => {
+            const walker = root.ownerDocument.createTreeWalker(root, 4); // SHOW_TEXT, also in iframe documents.
+            walker.currentNode = container;
+            let node = container, start = offset;
+            const step = () => backwards ? walker.previousNode() : walker.nextNode();
+            if (container.nodeType !== 3) {
+                const child = container.childNodes[backwards ? offset - 1 : offset];
+                if (child) {
+                    walker.currentNode = child;
+                    node = child.nodeType === 3 ? child : backwards ? walker.lastChild() || walker.previousNode() : walker.nextNode();
+                } else if (backwards) node = walker.previousNode();
+                else {
+                    // An element endpoint after its last child must skip that subtree.
+                    while (node !== root && !node.nextSibling) node = node.parentNode;
+                    node = node === root ? null : node.nextSibling;
+                    if (node) { walker.currentNode = node; if (node.nodeType !== 3) node = walker.nextNode(); }
+                }
+                start = node ? (backwards ? node.length : 0) : 0;
+            }
+            const chunks = [];
+            let remaining = budget + 1, previous;
+            while (node && remaining > 0) {
+                if (previous) {
+                    const gap = backwards ? separator(node, previous) : separator(previous, node);
+                    if (gap) { chunks.push(gap); remaining--; }
+                }
+                if (!remaining) break;
+                const from = backwards ? Math.max(0, start - remaining) : start;
+                const text = node.substringData(from, backwards ? start - from : remaining);
+                chunks.push(text); remaining -= text.length;
+                if (!remaining) break;
+                previous = node; node = step(); start = node ? (backwards ? node.length : 0) : 0;
+            }
+            const text = (backwards ? chunks.reverse() : chunks).join('');
+            if (text.length <= budget) return text;
+            let clipped = backwards ? text.slice(-budget) : text.slice(0, budget);
+            const pair = backwards ? text.slice(0, 2) : text.slice(-2);
+            if (/^\S{2}$/u.test(pair)) clipped = backwards ? clipped.replace(/^\S+\s*/u, '') : clipped.replace(/\s*\S+$/u, '');
+            return clipped;
+        };
+        // About a page and a half back and half a page forward: the antecedent of "he" or "this"
+        // is almost always behind the selection, and this stays far below the model's attention limit.
+        return { before: collect(range.startContainer, range.startOffset, true, 4000),
+            after: collect(range.endContainer, range.endOffset, false, 1500) };
+    } catch { return empty; } // Detached/unavailable reader documents must not prevent an explanation.
+}
+export function buildRequest(provider, { before = '', passage, after = '', question, book = {}, chapter, language, model, key }) {
     let base;
     try { base = new URL(provider.baseUrl); } catch { throw failure('askHttps'); }
     if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw failure('askHttps');
     const adapter = ADAPTERS[provider.adapter];
     if (!adapter || !model || !key) throw failure('askNoAnswer');
-    const system = `You help a reader understand a passage from a book. Answer in ${language === 'nl' ? 'Dutch' : 'English'}. Be concise: a short paragraph, no preamble, no bullet lists unless the passage is a list. If the passage is ambiguous, say what it most likely means and why.`;
+    const system = `You help a reader understand a passage from a book. The reader selected passage; before and after are surrounding text provided only to resolve references: answer about passage and do not summarise the context. Answer in ${language === 'nl' ? 'Dutch' : 'English'}. Be concise: a short paragraph, no preamble, no bullet lists unless the passage is a list. If the passage is ambiguous, say what it most likely means and why.`;
     const content = JSON.stringify({ title: typeof book === 'string' ? book : book.title || '',
-        author: book.author || '', chapter: chapter || '', passage, question });
+        author: book.author || '', chapter: chapter || '', before, passage, after, question });
     return { url: base.href.replace(/\/$/, '') + '/' + adapter.path,
         headers: { 'content-type': 'application/json', ...adapter.headers(key) }, body: adapter.body(model, system, content) };
 }
