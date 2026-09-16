@@ -2,6 +2,7 @@ import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
 import { createCloud } from './sync.js';
+import { createImportIndex, planDedupe } from './dedupe.js';
 
 const STRINGS = {
     nl: {
@@ -24,6 +25,13 @@ const STRINGS = {
         cloudFailed: 'Synchroniseren is mislukt. Probeer het opnieuw.',
         cloudSwitch: 'Dit apparaat bevat de bibliotheek van een ander account. Lokale boeken wissen en die van dit account laden?',
         cloudSwitchConfirm: 'Wissen en laden',
+        dedupeBooks: 'Dubbele boeken opruimen',
+        dedupeConfirm: '{count} boeken staan dubbel in je bibliotheek. Leeslamp houdt per boek één exemplaar en neemt de verste leesvoortgang mee. Er wordt geen bestand uit je Google Drive verwijderd.',
+        dedupeRun: 'Opruimen',
+        dedupeDone: '{count} dubbele boeken opgeruimd.',
+        dedupeUnsafe: 'Opruimen gestopt: een boek of bestandsverwijzing is gewijzigd of ontbreekt. Je overige boeken zijn behouden.',
+        importSkipped: '{count} stonden al in je bibliotheek en zijn overgeslagen.',
+        importSkippedOne: '1 stond al in je bibliotheek en is overgeslagen.',
         updateAvailable: 'Nieuwe versie beschikbaar',
         refreshApp: 'Vernieuwen',
         updateLater: 'Later',
@@ -200,6 +208,13 @@ const STRINGS = {
         cloudFailed: 'Sync failed. Please try again.',
         cloudSwitch: 'This device contains the library of another account. Clear local books and load those of this account?',
         cloudSwitchConfirm: 'Clear and load',
+        dedupeBooks: 'Clean up duplicates',
+        dedupeConfirm: '{count} books are in your library twice. Leeslamp keeps one of each and takes the furthest reading progress with it. No file is removed from your Google Drive.',
+        dedupeRun: 'Clean up',
+        dedupeDone: '{count} duplicate books cleaned up.',
+        dedupeUnsafe: 'Cleanup stopped: a book or file reference changed or is missing. Your remaining books have been kept.',
+        importSkipped: '{count} were already in your library and were skipped.',
+        importSkippedOne: '1 was already in your library and was skipped.',
         updateAvailable: 'New version available',
         refreshApp: 'Refresh',
         updateLater: 'Later',
@@ -596,6 +611,7 @@ systemTheme.addEventListener('change', applyMode);
 
 // Library. Only metadata and small cover blobs are loaded on startup.
 let books = [], roots = [], filter = 'all', query = '', searchTimer, importing = false;
+let dedupeCount = -1;
 const coverURLs = new Map();
 const coverBlobs = new Map();
 // Keep filtered-out cards detached so returning to All books also reuses images.
@@ -652,7 +668,15 @@ function renderFilters() {
     if (focusedFilter) [...$('#filter-list').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filters-toggle-label').textContent = filterName();
 }
+function renderDedupe() {
+    const count = visibleBooks().length;
+    if (count === dedupeCount) return;
+    dedupeCount = count;
+    const hidden = planDedupe(books, roots).total === 0;
+    for (const id of ['#dedupe', '#dedupe-mobile']) $(id).hidden = hidden;
+}
 function renderLibrary() {
+    renderDedupe();
     renderFilters();
     const sort = filter === 'reading' ? 'opened' : $('#sort').value;
     $('#sort').hidden = filter === 'reading';
@@ -1051,9 +1075,98 @@ $('#category-form').addEventListener('submit', e => {
     }
 });
 const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
+// Revalidate inside the write transaction: no stale plan may delete a record.
+const dedupeRevision = record => JSON.stringify(record && { ...record,
+    cover: record.cover ? [record.cover.size, record.cover.type] : null });
+async function applyDedupeBatch(expectedKeep, keep, drops) {
+    if (!drops.length || drops.length > 24 || drops.some(record => record.id === keep.id)) throw new Error(t('dedupeUnsafe'));
+    const expected = [expectedKeep, ...drops];
+    const db = await database();
+    await new Promise((resolve, reject) => {
+        const transaction = db.transaction(['books', 'files'], 'readwrite');
+        const store = transaction.objectStore('books'), files = transaction.objectStore('files');
+        transaction.oncomplete = resolve;
+        transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('dedupeUnsafe')));
+        let pending = expected.length;
+        for (const record of expected) {
+            const request = store.get(record.id);
+            request.onsuccess = () => {
+                if (dedupeRevision(request.result) !== dedupeRevision(record)) { transaction.abort(); return; }
+                if (--pending) return;
+                const existingFile = files.get(keep.id);
+                existingFile.onsuccess = () => {
+                    // Retain a local ebook too, including when a linked root is unavailable.
+                    let remaining = drops.length, saved = !!existingFile.result;
+                    const commit = () => {
+                        store.put(keep);
+                        for (const drop of drops) {
+                            if (drop.source?.kind === 'fs') store.put({ ...drop, hidden: true,
+                                synced: drop.updated });
+                            else { store.delete(drop.id); files.delete(drop.id); }
+                        }
+                    };
+                    for (const drop of drops) {
+                        const request = files.get(drop.id);
+                        request.onsuccess = () => {
+                            if (!saved && request.result?.file) {
+                                files.put({ id: keep.id, file: request.result.file }); saved = true;
+                            }
+                            if (--remaining === 0) commit();
+                        };
+                    }
+                };
+            };
+        }
+    });
+}
+async function dedupeBooks() {
+    if (importing) { toast(() => t('importBusy')); return; }
+    const plan = planDedupe(books, roots);
+    if (!plan.total) return;
+    const dialog = $('#dedupe-dialog');
+    if (dialog.open) return;
+    if (filtersOpen) setFiltersOpen(false);
+    dialog.returnValue = '';
+    $('#dedupe-summary').textContent = t('dedupeConfirm', { count: plan.total });
+    const confirmed = new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
+    dialog.showModal();
+    if (!await confirmed || importing) return;
+    setImporting(true);
+    let count = 0;
+    try {
+        // Fail closed before the first write if sync changed the confirmed plan.
+        const fresh = planDedupe(books, roots);
+        if (dedupeRevision(fresh) !== dedupeRevision(plan)) throw new Error(t('dedupeUnsafe'));
+        for (const group of plan.groups) {
+            let expectedKeep = books.find(record => record.id === group.keep.id);
+            const keep = { ...group.keep, ...group.merged,
+                coverSynced: expectedKeep.cover === group.merged.cover ? expectedKeep.coverSynced : false };
+            for (let i = 0; i < group.drop.length; i += 24) {
+                const drops = group.drop.slice(i, i + 24).map(({ keepFile, ...record }) => record);
+                keep.updated = Math.max(Date.now(), (expectedKeep.updated || 0) + 1);
+                await applyDedupeBatch(expectedKeep, keep, drops);
+                Object.assign(expectedKeep, keep);
+                for (const drop of drops) {
+                    // Cleanup promises to retain ALL Drive ebooks, including extra copies.
+                    cloud?.remove(drop, { keepFile: true });
+                    const existing = books.find(record => record.id === drop.id);
+                    if (drop.source?.kind === 'fs') Object.assign(existing, { hidden: true, synced: drop.updated });
+                    else { books = books.filter(record => record.id !== drop.id); localFiles.delete(drop.id); }
+                    presentedBooks.delete(drop.id); count++;
+                }
+                if ((await get('files', keep.id))?.file) localFiles.add(keep.id);
+                cloud?.changed(); renderLibrary(); await yieldUI();
+            }
+        }
+        toast(() => t('dedupeDone', { count }));
+    } catch (error) { report(() => t('dedupeUnsafe'), error); }
+    finally { setImporting(false); dedupeCount = -1; renderLibrary(); }
+}
+for (const selector of ['#dedupe', '#dedupe-mobile']) $(selector).addEventListener('click', () => void dedupeBooks());
 function setImporting(value) {
     importing = value;
-    for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
+    if (!value) dedupeCount = -1;
+    for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan', '#dedupe', '#dedupe-mobile']) $(selector).disabled = value;
     for (const button of $('#grid').querySelectorAll('.delete')) {
         button.disabled = value;
         cardStates.delete(button.closest('.card'));
@@ -1130,7 +1243,8 @@ async function importFiles(files, categoryForFile) {
         if (category === null) { setImporting(false); return; }
         categoryForFile = () => category;
     }
-    let count = 0;
+    let count = 0, skipped = 0;
+    let identities = createImportIndex(books), indexedCount = books.length;
     const failures = [];
     const pipeline = categoryPipeline();
     let lastRender = performance.now();
@@ -1141,14 +1255,20 @@ async function importFiles(files, categoryForFile) {
         try {
             const category = categoryForFile(file);
             const record = newRecord(file, category === AUTO_CATEGORY ? '' : category, { kind: 'blob' });
+            if (indexedCount !== books.length) { identities = createImportIndex(books); indexedCount = books.length; }
+            if (identities.has(record)) { skipped++; await yieldUI(); continue; }
             record.categoryManual = category !== AUTO_CATEGORY;
             try {
                 const meta = await importMetadata(file, kind);
                 Object.assign(record, meta, { title: meta.title.trim() || record.title, metadataReady: true });
             } catch (error) { console.warn(file.name, error); failures.push(() => t('metadataSkipped', { name: file.name })); }
+            // Metadata parsing yields to sync; recheck the current visible library.
+            identities = createImportIndex(books);
+            if (identities.has(record)) { skipped++; await yieldUI(); continue; }
             pipeline.local(record);
             await bookTransaction(record, file);
             books.push(record);
+            identities.add(record); indexedCount = books.length;
             count++;
             pipeline.remember(record.category);
             await pipeline.enqueue(record);
@@ -1160,7 +1280,9 @@ async function importFiles(files, categoryForFile) {
     catch (error) { report(() => t('categoryFailed'), error); }
     setImporting(false);
     renderLibrary();
-    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline),
+        ...(skipped ? [t(skipped === 1 ? 'importSkippedOne' : 'importSkipped', { count: skipped })] : []),
+        ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
 
 // File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
@@ -2038,6 +2160,11 @@ async function cloudChange(id, merge) {
             request.onsuccess = () => {
                 try {
                     changed = merge(request.result);
+                    // Keep a local path marker so a cloud tombstone cannot make
+                    // a removed folder book return on this device's next scan.
+                    if (changed === null && request.result?.source?.kind === 'fs') {
+                        changed = { ...request.result, hidden: true, synced: request.result.updated };
+                    }
                     if (changed === null) { store.delete(id); transaction.objectStore('files').delete(id); }
                     else if (changed !== undefined) store.put(changed);
                 } catch (error) { transaction.abort(); reject(error); }

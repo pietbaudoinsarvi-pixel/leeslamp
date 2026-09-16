@@ -1,5 +1,5 @@
 // Only these fields cross the account boundary. Device flags and blobs never do.
-const textFields = ['category', 'title', 'author', 'name', 'ext', 'kind'];
+const textFields = ['category', 'title', 'author', 'name', 'ext', 'kind', 'driveFile'];
 const numberFields = ['fraction', 'opened', 'size', 'lastModified', 'added'];
 const booleanFields = ['hidden', 'finished', 'categoryManual', 'autoCategorized', 'metadataReady'];
 export function recordData(record = {}) {
@@ -281,7 +281,7 @@ export function createCloud(local, ui) {
                 check(uid, generation);
                 pushed.set(item.id, item.updated);
                 await deleteFile(uid, generation, await findName(uid, generation, name(item.id, true)));
-                await deleteFile(uid, generation, await findFile(uid, generation, item.id));
+                if (!item.keepFile) await deleteFile(uid, generation, await findFile(uid, generation, item.id));
             }
             check(uid, generation);
             localStorage.setItem(queueKey, JSON.stringify(queue().filter(value => !(value.sub === uid && value.id === item.id && value.updated === item.updated))));
@@ -438,13 +438,13 @@ export function createCloud(local, ui) {
             catch { failure(true); }
             finally { receive(null); await authWork; }
         },
-        remove(record) {
+        remove(record, options = {}) {
             try {
                 if (!enabled) return;
                 const uid = ready ? session.user.id : localStorage.getItem(userKey);
                 if (!uid) return;
                 const items = queue().filter(item => !(item.sub === uid && item.id === record.id));
-                items.push({ sub: uid, id: record.id, updated: Date.now() });
+                items.push({ sub: uid, id: record.id, updated: Date.now(), keepFile: options.keepFile === true });
                 localStorage.setItem(queueKey, JSON.stringify(items));
                 changed();
             } catch { failure(true); }

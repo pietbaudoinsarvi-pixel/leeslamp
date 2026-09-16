@@ -276,6 +276,7 @@
       .brand svg { width:22px; height:28px; }
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
       .sidebar-bottom { display:contents; }
+      #dedupe { display:none; }
       .sidebar-bottom > button { order:1; width:100%; min-width:0; height:40px; padding:0 12px; font-size:12px; text-align:center; }
       #find-books:not([hidden]) ~ #folder-import { grid-column:1/-1; }
       .sidebar-bottom .import { justify-content:center; gap:8px; border:1px solid var(--fg); }
@@ -349,10 +350,11 @@
       <div class="brand"><svg class="icon" aria-hidden="true"><use href="#i-lamp"/></svg>Leeslamp</div>
       <div class="sidebar-heading eyebrow" data-i18n="library">Bibliotheek</div>
       <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters">
-        <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+        <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="dedupe-mobile" class="folder-button" type="button" hidden data-i18n="dedupeBooks">Dubbele boeken opruimen</button><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
         <div id="filter-list"></div>
       </nav>
       <div class="sidebar-bottom">
+        <button class="folder-button" id="dedupe" type="button" hidden data-i18n="dedupeBooks">Dubbele boeken opruimen</button>
         <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
         <button class="folder-button" id="find-books" hidden data-i18n="findBooks" aria-describedby="find-books-hint">Boeken zoeken</button>
         <p class="find-books-hint" id="find-books-hint" data-i18n="findBooksHint">Kies in de kiezer 'Alles selecteren' om je hele map toe te voegen.</p>
@@ -419,6 +421,13 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <button id="cloud-sync" class="cloud-action" type="button" data-i18n="syncNow">Nu synchroniseren</button>
       <button id="cloud-signout" class="cloud-action" type="button" data-i18n="signOut">Uitloggen</button>
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
+    </form>
+  </dialog>
+  <dialog id="dedupe-dialog" class="cloud-dialog" aria-labelledby="dedupe-title" aria-describedby="dedupe-summary">
+    <form method="dialog">
+      <h2 id="dedupe-title" data-i18n="dedupeBooks">Dubbele boeken opruimen</h2>
+      <p id="dedupe-summary"></p>
+      <div class="dialog-actions"><button value="" autofocus data-i18n="cancel">Annuleren</button><button value="confirm" class="import" data-i18n="dedupeRun">Opruimen</button></div>
     </form>
   </dialog>
   <dialog id="cloud-switch-dialog" class="cloud-dialog" aria-labelledby="cloud-switch-title">
