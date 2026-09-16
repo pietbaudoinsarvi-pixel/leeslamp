@@ -306,7 +306,8 @@ export function createCloud(local, ui) {
                 check(uid, generation);
                 if (item.error) throw item.error;
                 const flags = {};
-                if (file) {
+                // Never upload an empty file: it would replace a good copy on every other device.
+                if (file && file.size) {
                     flags.driveFile = await uploadFile(uid, generation, record, file);
                     flags.fileSynced = flags.cloudFile = true;
                 }
@@ -493,6 +494,7 @@ export function createCloud(local, ui) {
                 blob = new Blob(chunks, { type: response.headers.get('Content-Type') || '' });
             } else { blob = await response.blob(); received = blob.size; }
             check(uid, generation);
+            if (!blob.size) throw new Error('Empty download');
             onProgress?.(received, total);
             console.info(`cloud download ${record.name} ${received} ${Math.round(performance.now() - started)}`);
             await local.saveFile(record.id, blob, () => valid(uid, generation));

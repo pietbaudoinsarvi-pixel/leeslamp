@@ -109,6 +109,8 @@ const STRINGS = {
         title: 'Titel',
         author: 'Auteur',
         added: 'Toegevoegd',
+        emptyFile: '{name}: het bestand is leeg. Controleer of het volledig op je apparaat staat en niet alleen in de cloud.',
+        emptyBook: 'Dit boek is leeg: er zitten geen gegevens in het bestand. Verwijder het en voeg het opnieuw toe.',
         emptyTitle: 'Ruimte voor je volgende boek.',
         emptyDrag: 'Sleep je boeken hierheen.',
         emptyText: 'Je bibliotheek begint met één goed verhaal.',
@@ -329,6 +331,8 @@ const STRINGS = {
         title: 'Title',
         author: 'Author',
         added: 'Date added',
+        emptyFile: '{name}: the file is empty. Check that it is fully downloaded to your device, not only stored in the cloud.',
+        emptyBook: 'This book is empty: the file contains no data. Remove it and add it again.',
         emptyTitle: 'Make room for your next read.',
         emptyDrag: 'Drop your books here.',
         emptyText: 'One good story is all it takes to begin.',
@@ -956,6 +960,7 @@ $('#grid').addEventListener('click', async e => {
                 let file = (await get('files', record.id))?.file;
                 if (root && await readPermission(root.handle)) file = await resolveFile(root, record.source.path);
                 if (!file) throw new Error(t('fileStorageMissing'));
+                if (!file.size) throw new Error('empty file');
                 await cloud.upload(record, file);
             } catch { toast(() => t('cloudFailed')); }
             return;
@@ -1332,6 +1337,8 @@ async function importFiles(files, categoryForFile) {
         toast(() => t('importProgress', { current: index + 1, total: files.length }), 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
         if (!kind) { failures.push(() => t('unsupportedFile', { name: file.name })); continue; }
+        // An empty file is never a book: iOS hands one back for documents that live only in iCloud.
+        if (!file.size) { failures.push(() => t('emptyFile', { name: file.name })); continue; }
         try {
             const category = categoryForFile(file);
             const record = newRecord(file, category === AUTO_CATEGORY ? '' : category, { kind: 'blob' });
@@ -1958,6 +1965,7 @@ async function openBook(record) {
         } else file = (await get('files', record.id))?.file;
         if (!live(session)) return;
         if (!file) throw new Error(t('fileStorageMissing'));
+        if (!file.size) { resolvingFile = false; throw Object.assign(new Error('empty file'), { empty: true }); }
         resolvingFile = false;
         if (record.kind === 'foliate') await openFoliate(session, file);
         else if (record.kind === 'pdf') await openPDF(session, file);
@@ -1973,7 +1981,8 @@ async function openBook(record) {
     } catch (error) {
         if (live(session)) {
             await closeBook();
-            report(() => resolvingFile ? t('fileMissing', { name: record.name })
+            report(() => error?.empty ? t('emptyBook')
+                : resolvingFile ? t('fileMissing', { name: record.name })
                 : t('openFailed', { title: record.title }), error);
         }
     }

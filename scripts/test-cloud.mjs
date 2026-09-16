@@ -638,3 +638,13 @@ try {
     globalThis.fetch = originalFetch;
 }
 console.log('PASS: all cloud tests (Node built-ins only; no network or browser).');
+
+// An empty file is never a book: it must not reach Drive and an empty download must not be stored.
+{
+    const empty = fixture({ records: [{ ...book, id: 'hollow', source: { kind: 'blob' }, updated: 30 }] });
+    empty.files.set('hollow', new Blob([], { type: 'application/pdf' }));
+    await empty.cloud.start();
+    assert.ok(!empty.calls.some(call => call.type === 'initiate' || call.type === 'bytes'), 'no ebook upload for an empty file');
+    assert.ok(!empty.localBooks.get('hollow')?.cloudFile, 'the record is not marked as available in the cloud');
+    console.log('PASS: an empty file is never uploaded and never marked as a cloud copy.');
+}
