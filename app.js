@@ -27,8 +27,10 @@ const STRINGS = {
         cloudSwitchConfirm: 'Wissen en laden',
         dedupeBooks: 'Dubbele boeken opruimen',
         dedupeConfirm: '{count} boeken staan dubbel in je bibliotheek. Leeslamp houdt per boek één exemplaar en neemt de verste leesvoortgang mee. Er wordt geen bestand uit je Google Drive verwijderd.',
+        dedupeConfirmOne: 'Eén boek staat dubbel in je bibliotheek. Leeslamp houdt één exemplaar en neemt de verste leesvoortgang mee. Er wordt geen bestand uit je Google Drive verwijderd.',
         dedupeRun: 'Opruimen',
         dedupeDone: '{count} dubbele boeken opgeruimd.',
+        dedupeDoneOne: 'Eén dubbel boek opgeruimd.',
         dedupeUnsafe: 'Opruimen gestopt: een boek of bestandsverwijzing is gewijzigd of ontbreekt. Je overige boeken zijn behouden.',
         importSkipped: '{count} stonden al in je bibliotheek en zijn overgeslagen.',
         importSkippedOne: '1 stond al in je bibliotheek en is overgeslagen.',
@@ -210,8 +212,10 @@ const STRINGS = {
         cloudSwitchConfirm: 'Clear and load',
         dedupeBooks: 'Clean up duplicates',
         dedupeConfirm: '{count} books are in your library twice. Leeslamp keeps one of each and takes the furthest reading progress with it. No file is removed from your Google Drive.',
+        dedupeConfirmOne: 'One book is in your library twice. Leeslamp keeps one copy and takes the furthest reading progress with it. No file is removed from your Google Drive.',
         dedupeRun: 'Clean up',
         dedupeDone: '{count} duplicate books cleaned up.',
+        dedupeDoneOne: 'One duplicate book cleaned up.',
         dedupeUnsafe: 'Cleanup stopped: a book or file reference changed or is missing. Your remaining books have been kept.',
         importSkipped: '{count} were already in your library and were skipped.',
         importSkippedOne: '1 was already in your library and was skipped.',
@@ -1076,8 +1080,12 @@ $('#category-form').addEventListener('submit', e => {
 });
 const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
 // Revalidate inside the write transaction: no stale plan may delete a record.
-const dedupeRevision = record => JSON.stringify(record && { ...record,
-    cover: record.cover ? [record.cover.size, record.cover.type] : null });
+const stableValue = value => Array.isArray(value) ? value.map(stableValue)
+    : value && typeof value === 'object' && !(value instanceof Blob)
+        ? Object.keys(value).sort().map(key => [key, stableValue(value[key])]) : value;
+// Key order differs between a stored record and the in-memory rebuild, so compare a stable form.
+const dedupeRevision = record => JSON.stringify(record && stableValue({ ...record,
+    cover: record.cover ? [record.cover.size, record.cover.type] : null }));
 async function applyDedupeBatch(expectedKeep, keep, drops) {
     if (!drops.length || drops.length > 24 || drops.some(record => record.id === keep.id)) throw new Error(t('dedupeUnsafe'));
     const expected = [expectedKeep, ...drops];
@@ -1127,7 +1135,7 @@ async function dedupeBooks() {
     if (dialog.open) return;
     if (filtersOpen) setFiltersOpen(false);
     dialog.returnValue = '';
-    $('#dedupe-summary').textContent = t('dedupeConfirm', { count: plan.total });
+    $('#dedupe-summary').textContent = t(plan.total === 1 ? 'dedupeConfirmOne' : 'dedupeConfirm', { count: plan.total });
     const confirmed = new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
     dialog.showModal();
     if (!await confirmed || importing) return;
@@ -1158,7 +1166,7 @@ async function dedupeBooks() {
                 cloud?.changed(); renderLibrary(); await yieldUI();
             }
         }
-        toast(() => t('dedupeDone', { count }));
+        toast(() => t(count === 1 ? 'dedupeDoneOne' : 'dedupeDone', { count }));
     } catch (error) { report(() => t('dedupeUnsafe'), error); }
     finally { setImporting(false); dedupeCount = -1; renderLibrary(); }
 }

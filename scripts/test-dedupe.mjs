@@ -71,7 +71,19 @@ console.log('PASS: import identity, metadata provenance, hidden/invalid sizes an
 
 // Execute the actual app transaction helper against a small atomic IDB double.
 const appSource = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
-const batchSource = appSource.slice(appSource.indexOf('const dedupeRevision ='), appSource.indexOf('\nasync function dedupeBooks()'));
+// A stored record and the in-memory rebuild differ only in key order; the guard must not trip.
+{
+    const marker = String.fromCharCode(10) + 'async function applyDedupeBatch';
+    const source = appSource.slice(appSource.indexOf('const stableValue ='), appSource.indexOf(marker));
+    const revision = new Function(source + '; return dedupeRevision;')();
+    const stored = { id: 'x', name: 'B.epub', ext: 'epub', kind: 'text', category: '', source: { kind: 'blob' }, size: 10, updated: 1 };
+    const inMemory = { category: '', source: { kind: 'blob' }, ...stored };
+    assert.equal(revision(stored), revision(inMemory), 'key order must not change the revision');
+    assert.notEqual(revision(stored), revision({ ...stored, updated: 2 }), 'a real change must change the revision');
+    assert.notEqual(revision(stored), revision({ ...stored, source: { kind: 'fs', root: 'r', path: 'p' } }));
+    console.log('PASS: the revision guard ignores key order and still catches real changes.');
+}
+const batchSource = appSource.slice(appSource.indexOf('const stableValue ='), appSource.indexOf('\nasync function dedupeBooks()'));
 function databaseFixture(records, blobs) {
     const data = { books: new Map(records.map(record => [record.id, structuredClone(record)])), files: new Map(blobs) };
     let writes = 0;
@@ -128,7 +140,7 @@ const dialog = { open: false, addEventListener(_event, fn) { close = fn; },
 const removed = [];
 const action = new Function('planDedupe', 'books', 'roots', '$', 't', 'setImporting', 'report', 'renderLibrary', 'applyDedupeBatch',
     'cloud', 'get', 'localFiles', 'presentedBooks', 'toast', 'setFiltersOpen', 'yieldUI',
-    `let importing = false, filtersOpen = false, dedupeCount; ${appSource.slice(appSource.indexOf('const dedupeRevision ='), appSource.indexOf('\nasync function applyDedupeBatch'))}\n${actionSource}; return dedupeBooks;`)(
+    `let importing = false, filtersOpen = false, dedupeCount; ${appSource.slice(appSource.indexOf('const stableValue ='), appSource.indexOf('\nasync function applyDedupeBatch'))}\n${actionSource}; return dedupeBooks;`)(
     planDedupe, guarded, roots, selector => selector === '#dedupe-dialog' ? dialog : { textContent: '' }, key => key,
     () => {}, (_message, error) => errors.push(error), () => {}, () => { writes++; },
     { remove: (record, options) => removed.push({ id: record.id, ...options }), changed: () => {} }, async () => undefined,
