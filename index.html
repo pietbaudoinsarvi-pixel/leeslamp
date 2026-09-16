@@ -121,6 +121,7 @@
     #clear-recent { padding:4px 0; font-size:11px; color:var(--mute); text-decoration:underline; text-underline-offset:3px; border-radius:0; }
     #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(152px,1fr)); gap:36px 28px; }
     /* Skip layout and paint for cards outside the viewport; the size hint keeps the scrollbar honest. */
+    .card img { -webkit-user-drag:none; user-select:none; }
     .card { min-width:0; position:relative; content-visibility:auto; contain-intrinsic-size:auto 280px; }
     .card.arriving { animation:cover-in 560ms var(--ease) both; animation-delay:var(--delay,0ms); }
     .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:0; }
@@ -407,7 +408,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       </div>
     </main>
   </div>
-  <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx">
+  <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx,application/epub+zip,application/pdf,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/html">
   <input id="folder-input" type="file" webkitdirectory multiple hidden>
   <dialog id="book-actions" aria-labelledby="book-actions-title">
     <form method="dialog">

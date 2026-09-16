@@ -109,6 +109,7 @@ const STRINGS = {
         title: 'Titel',
         author: 'Auteur',
         added: 'Toegevoegd',
+        nothingAdded: 'Er is niets toegevoegd. Kies ebookbestanden, bijvoorbeeld epub of pdf; afbeeldingen en andere bestanden worden overgeslagen.',
         emptyFile: '{name}: het bestand is leeg. Controleer of het volledig op je apparaat staat en niet alleen in de cloud.',
         emptyBook: 'Dit boek is leeg: er zitten geen gegevens in het bestand. Verwijder het en voeg het opnieuw toe.',
         emptyTitle: 'Ruimte voor je volgende boek.',
@@ -331,6 +332,7 @@ const STRINGS = {
         title: 'Title',
         author: 'Author',
         added: 'Date added',
+        nothingAdded: 'Nothing was added. Choose ebook files such as epub or pdf; images and other files are skipped.',
         emptyFile: '{name}: the file is empty. Check that it is fully downloaded to your device, not only stored in the cloud.',
         emptyBook: 'This book is empty: the file contains no data. Remove it and add it again.',
         emptyTitle: 'Make room for your next read.',
@@ -845,6 +847,7 @@ function updateBookCard(card, book) {
             const image = cover.querySelector('img') || el('img');
             if (image.src !== coverURLs.get(book.id)) image.src = coverURLs.get(book.id);
             attr(image, 'alt', ''); attr(image, 'loading', 'lazy'); attr(image, 'decoding', 'async');
+            attr(image, 'draggable', 'false');
             if (!image.parentNode) { cover.querySelector('.placeholder')?.remove(); cover.prepend(image); }
             if (cover.classList.contains('no-cover')) cover.classList.remove('no-cover');
         } else {
@@ -1367,7 +1370,7 @@ async function importFiles(files, categoryForFile) {
     catch (error) { report(() => t('categoryFailed'), error); }
     setImporting(false);
     renderLibrary();
-    toast(() => [t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline),
+    toast(() => [count ? t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline) : t('nothingAdded'),
         ...(skipped ? [t(skipped === 1 ? 'importSkippedOne' : 'importSkipped', { count: skipped })] : []),
         ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
@@ -1547,18 +1550,24 @@ $('#file-input').addEventListener('change', e => {
     e.target.value = ''; findBooksImport = false;
     void importFiles(files, automatic ? () => AUTO_CATEGORY : undefined);
 });
-let dragDepth = 0;
+let dragDepth = 0, draggingInside = false;
+// A cover dragged out of the grid is a file to the browser; dropping it back would import a stray image.
+document.addEventListener('dragstart', () => { draggingInside = true; }, true);
+document.addEventListener('dragend', () => { draggingInside = false; }, true);
+// Bubble phase, so this runs after the library's own drop handler has seen the flag.
+document.addEventListener('drop', () => { draggingInside = false; });
 $('#library').addEventListener('dragenter', e => {
-    if (!e.dataTransfer.types.includes('Files')) return;
+    if (draggingInside || !e.dataTransfer.types.includes('Files')) return;
     e.preventDefault(); dragDepth++; $('#library').classList.add('dragging');
 });
 $('#library').addEventListener('dragover', e => {
-    if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+    if (!draggingInside && e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
 });
 $('#library').addEventListener('dragleave', () => {
     if (--dragDepth <= 0) { dragDepth = 0; $('#library').classList.remove('dragging'); }
 });
 $('#library').addEventListener('drop', async e => {
+    if (draggingInside) { dragDepth = 0; $('#library').classList.remove('dragging'); return; }
     e.preventDefault(); dragDepth = 0; $('#library').classList.remove('dragging');
     const files = [...e.dataTransfer.files];
     // Capture promises synchronously: the drag data store expires after this event dispatch.
