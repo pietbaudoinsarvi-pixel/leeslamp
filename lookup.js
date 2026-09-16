@@ -43,6 +43,21 @@ export function pickWiktionary(extract, lang) {
     const selected = meaning >= 0 && end >= 0 ? content.slice(0, end) : content;
     return truncate(selected.filter(line => !/^=/.test(line)).map(line => line.replace(/^[#*:;\s]+/, '')).join(' '), 300);
 }
+const LEMMA = String.raw`(?:\s+(?:het|de|een|'t|the|a|an|werkwoord|zelfstandig naamwoord|noun|verb|adjective))*\s+([\p{L}'-]+)`;
+const inflection = (marker, link) => new RegExp(String.raw`\b(?:${marker})\b[^.]*?\b(?:${link})` + LEMMA, 'iu');
+const INFLECTION = [
+    inflection('plural|singular|comparative|superlative|past tense|past participle|present participle|gerund|third-person singular', 'of'),
+    inflection("meervoud|enkelvoud|verkleinwoord|vergrotende trap|overtreffende trap|verleden tijd|voltooid deelwoord|tegenwoordig deelwoord|gebiedende wijs|vervoeging|persoonsvorm", 'van'),
+];
+// Returns the lemma when the text says nothing but "plural of X" / "meervoud van X".
+export function inflectionOf(text, term) {
+    if (!text || text.length > 120) return null;
+    for (const pattern of INFLECTION) {
+        const lemma = text.match(pattern)?.[1];
+        if (lemma && lemma.toLowerCase() !== String(term).toLowerCase()) return lemma;
+    }
+    return null;
+}
 export function cancelLookup() { pending?.abort(); pending = null; }
 export async function lookup(selection, lang, fetchImpl = fetch) {
     cancelLookup();
@@ -68,11 +83,21 @@ export async function lookup(selection, lang, fetchImpl = fetch) {
         const hit = pickWikipedia(null, search);
         return hit ? pickWikipedia(await summary(hit)) : null;
     };
+    const entry = async (language, word) => {
+        const response = await json(`https://${language}.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(word)}&format=json&origin=*`);
+        return pickWiktionary(Object.values(response?.query?.pages || {})[0]?.extract, language);
+    };
     const wiktionary = async language => {
-        const response = await json(`https://${language}.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=${encodeURIComponent(queries.wiktionary)}&format=json&origin=*`);
-        const text = pickWiktionary(Object.values(response?.query?.pages || {})[0]?.extract, language);
-        return text ? { kind: 'wiktionary', title: queries.term, text,
-            url: `https://${language}.wiktionary.org/wiki/${encodeURIComponent(queries.wiktionary)}` } : null;
+        let word = queries.wiktionary, title = queries.term;
+        let text = await entry(language, word);
+        // "passes: plural of pass" is a pointer, not a meaning: follow it once.
+        const lemma = inflectionOf(text, word);
+        if (lemma) {
+            const better = await entry(language, lemma);
+            if (better) { text = better; title = `${queries.term} · ${lemma}`; word = lemma; }
+        }
+        return text ? { kind: 'wiktionary', title, text,
+            url: `https://${language}.wiktionary.org/wiki/${encodeURIComponent(word)}` } : null;
     };
     try {
         let failed = false;

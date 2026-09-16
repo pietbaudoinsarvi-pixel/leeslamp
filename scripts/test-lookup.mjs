@@ -116,3 +116,28 @@ assert.equal(nodes['#lookup-button'].hidden, true, 'empty selection hides button
 session.controller.abort(); selection.isCollapsed = false; doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, true, 'session abort tears down listeners');
 console.log('PASS: reader selection fixtures, iframe coordinates, viewport/bar bounds, 300-character limit and session listener teardown.');
+
+// An inflected form points at its lemma; the lookup must follow it once and show the real meaning.
+{
+    const { inflectionOf, lookup: run } = await import('../lookup.js');
+    assert.equal(inflectionOf('passes plural of pass', 'passes'), 'pass');
+    assert.equal(inflectionOf('meervoud van pas', 'passen'), 'pas');
+    assert.equal(inflectionOf('A narrow route through mountains.', 'pass'), null, 'a real definition is not an inflection');
+    assert.equal(inflectionOf('plural of pass', 'pass'), null, 'never point a word at itself');
+    const asked = [];
+    const result = await run('passes', 'en', async url => {
+        asked.push(url);
+        if (url.includes('wikipedia')) return { ok: true, status: 200, json: async () => ({}) };
+        const word = decodeURIComponent(new URL(url).searchParams.get('titles'));
+        const noun = ['== English ==', '=== Noun ==='];
+        const extract = word === 'passes' ? noun.concat('passes plural of pass').join(String.fromCharCode(10))
+            : noun.concat('A narrow route through a mountain range.').join(String.fromCharCode(10));
+        return { ok: true, status: 200, json: async () => ({ query: { pages: { 1: { extract } } } }) };
+    });
+    assert.equal(result.kind, 'wiktionary');
+    assert.match(result.text, /narrow route/, 'the lemma meaning is shown');
+    assert.match(result.title, /passes/); assert.match(result.title, /pass\b/);
+    assert.match(result.url, /wiki\/pass$/, 'the link points at the lemma');
+    assert.equal(asked.filter(url => url.includes('wiktionary')).length, 2, 'exactly one extra hop');
+    console.log('PASS: an inflected form follows through to its lemma, once.');
+}
