@@ -2149,7 +2149,7 @@ function setupScroll(session) {
     });
 }
 
-// PDF: placeholders for every page, canvases only inside the observer's near range.
+// PDF: placeholders for every page, canvases and text only inside the observer's near range.
 async function openPDF(session, file) {
     const pdfjs = await loadPDF();
     if (!live(session)) return;
@@ -2163,6 +2163,7 @@ async function openPDF(session, file) {
     if (!live(session)) return;
     const pane = el('div'); pane.id = 'pdf'; pane.tabIndex = 0; localize(pane, 'readPDF', {}, 'aria-label');
     session.pane = pane;
+    hookSelection(session, document, pane);
     const fragment = document.createDocumentFragment();
     session.pages = Array.from({ length: doc.numPages }, (_, index) => {
         const box = el('div', 'page');
@@ -2170,7 +2171,7 @@ async function openPDF(session, file) {
         box.dataset.page = index;
         localize(box, 'pageNumber', { page: index + 1 }, 'aria-label');
         fragment.append(box);
-        return { box, index, visible: false, generation: 0, task: null, canvas: null, rendering: false };
+        return { box, index, visible: false, generation: 0, task: null, canvas: null, textTask: null, textLayer: null, rendering: false };
     });
     pane.append(fragment); $('#r-body').append(pane);
     const measure = () => { session.pageTops = session.pages.map(p => p.box.offsetTop); };
@@ -2183,6 +2184,8 @@ async function openPDF(session, file) {
     function discard(page) {
         page.generation++;
         page.task?.cancel(); page.task = null;
+        page.textTask?.cancel(); page.textTask = null;
+        page.textLayer?.remove(); page.textLayer = null;
         if (page.canvas) { page.canvas.remove(); page.canvas.width = page.canvas.height = 0; page.canvas = null; }
         page.rendering = false;
     }
@@ -2200,15 +2203,31 @@ async function openPDF(session, file) {
             if (!width) return;
             page.box.style.aspectRatio = `${base.width} / ${base.height}`;
             scheduleMeasure();
-            const scaled = pdfPage.getViewport({ scale: width / base.width * (devicePixelRatio || 1) });
+            const scaled = pdfPage.getViewport({ scale: width / base.width });
+            const outputScale = devicePixelRatio || 1;
             const canvas = el('canvas');
-            canvas.width = Math.ceil(scaled.width); canvas.height = Math.ceil(scaled.height);
+            canvas.width = Math.ceil(scaled.width * outputScale); canvas.height = Math.ceil(scaled.height * outputScale);
             localize(canvas, 'pageNumber', { page: page.index + 1 }, 'aria-label');
-            const task = pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: scaled });
+            const task = pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: scaled,
+                transform: [outputScale, 0, 0, outputScale, 0, 0] });
             page.task = task; page.canvas = canvas; page.box.append(canvas);
             await task.promise;
             if (!valid()) return;
             page.task = null;
+            const textContentSource = await pdfPage.getTextContent();
+            // Let queued canvas work proceed before laying out selectable text.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            if (!valid()) return;
+            const container = el('div', 'textLayer');
+            container.setAttribute('aria-hidden', 'true');
+            container.style.setProperty('--scale-factor', scaled.scale);
+            page.textLayer = container; page.box.append(container);
+            // Confirmed in the cached CDN 4.10.38 build: export { ce as TextLayer }.
+            const layer = new pdfjs.TextLayer({ textContentSource, container, viewport: scaled });
+            page.textTask = layer;
+            await layer.render();
+            if (!valid()) return;
+            page.textTask = null;
             pdfPage.cleanup();
         } catch (error) {
             if (valid() && error.name !== 'RenderingCancelledException') {
@@ -2225,17 +2244,25 @@ async function openPDF(session, file) {
     }, { root: pane, rootMargin: '100% 0px' });
     for (const page of session.pages) observer.observe(page.box);
     session.refreshPDF = () => {
+        closeLookup();
         for (const page of session.pages) discard(page);
         measure();
         // Resize may not change intersection thresholds, so explicitly queue near pages.
         for (const page of session.pages) if (page.visible) void render(page);
     };
     const resize = new ResizeObserver(() => {
+        closeLookup();
+        for (const page of session.pages) discard(page);
         clearTimeout(session.resizeTimer);
         session.resizeTimer = setTimeout(() => { if (live(session)) session.refreshPDF(); }, 150);
     });
     resize.observe(pane);
-    session.cleanups.push(() => { observer.disconnect(); resize.disconnect(); for (const page of session.pages) discard(page); });
+    session.cleanups.push(() => {
+        observer.disconnect(); resize.disconnect();
+        for (const page of session.pages) discard(page);
+        // Cancellation settles first, then pdf.js can free its shared measurement canvases.
+        queueMicrotask(() => pdfjs.TextLayer.cleanup());
+    });
     measure(); setupScroll(session);
     const outline = await doc.getOutline().catch(() => null);
     if (!live(session)) return;
@@ -2408,8 +2435,7 @@ function applyPreferences(changed) {
     }
     if (changed === 'width' && active?.refreshPDF) {
         clearTimeout(active.resizeTimer);
-        const session = active;
-        session.resizeTimer = setTimeout(() => { if (live(session)) session.refreshPDF(); }, 150);
+        active.refreshPDF();
     }
     syncPreferences(); applyMode();
 }

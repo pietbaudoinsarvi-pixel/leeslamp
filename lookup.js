@@ -10,8 +10,8 @@ export function truncate(text, max) {
 }
 export function buildQueries(selection, lang) {
     const raw = String(selection || '').trim();
-    // The acceptance boundary is exclusive: 300 characters are refused.
-    if (!raw || raw.length >= 300) return null;
+    // Long passages are the point of asking for an explanation; the boundary is exclusive.
+    if (!raw || raw.length >= 2000) return null;
     const term = raw.replace(/\s+/g, ' ').replace(/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/gu, '');
     if (!term) return null;
     const words = term.split(' ');

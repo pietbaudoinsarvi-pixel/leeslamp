@@ -24,7 +24,9 @@ assert.deepEqual(buildQueries('  “...lamp!”  ', 'nl'), { term: 'lamp', lang:
 assert.equal(buildQueries('een   woord', 'nl').wiktionary, 'een woord');
 assert.equal(buildQueries('meer dan twee woorden', 'nl').wiktionary, null);
 assert.equal(buildQueries(Array(15).fill('woord').join(' '), 'nl').wikipedia.split(' ').length, 12);
-assert.equal(buildQueries('x'.repeat(300), 'nl'), null);
+assert.equal(buildQueries('x'.repeat(2000), 'nl'), null);
+assert.ok(buildQueries('woord '.repeat(200), 'nl'), 'a long passage is accepted');
+assert.equal(buildQueries('woord '.repeat(200), 'nl').wikipedia.split(' ').length, 12, 'only the first twelve words are searched');
 assert.ok(buildQueries('x'.repeat(299), 'nl'));
 assert.equal(buildQueries('“...”', 'nl'), null);
 assert.equal(truncate('one two three four five', 15), 'one two three…');
@@ -76,7 +78,7 @@ await assert.rejects(lookup('Network failure fixture', 'nl', async () => { throw
 const waiting = lookup('Cancelled lookup fixture', 'en', (url, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })));
 cancelLookup();
 await assert.rejects(waiting, { name: 'AbortError' });
-assert.equal(await lookup('x'.repeat(300), 'nl', () => assert.fail('long selection fetched')), null);
+assert.equal(await lookup('x'.repeat(2000), 'nl', () => assert.fail('long selection fetched')), null);
 console.log('PASS: lookup fixtures, headers, parallel sources, fallbacks, language limit, extraction, cache and cancellation.');
 
 // Exercise the real selection handler with document/viewport fixtures. No browser or network needed.
@@ -106,7 +108,7 @@ doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, false);
 assert.equal(nodes['#lookup-button'].style.left, '248px', 'iframe selection clamps inside viewport');
 assert.equal(nodes['#lookup-button'].style.top, '548px', 'button reserves bottom bar space');
-selected = 'x'.repeat(300); doc.dispatchEvent(new Event('selectionchange'));
+selected = 'x'.repeat(2000); doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, true);
 selected = 'lamp'; selection.focusNode = outside; doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, true, 'selection must remain entirely inside book');
@@ -115,7 +117,7 @@ selection.isCollapsed = true; doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, true, 'empty selection hides button');
 session.controller.abort(); selection.isCollapsed = false; doc.dispatchEvent(new Event('selectionchange'));
 assert.equal(nodes['#lookup-button'].hidden, true, 'session abort tears down listeners');
-console.log('PASS: reader selection fixtures, iframe coordinates, viewport/bar bounds, 300-character limit and session listener teardown.');
+console.log('PASS: reader selection fixtures, iframe coordinates, viewport/bar bounds, 2000-character limit and session listener teardown.');
 
 // An inflected form points at its lemma; the lookup must follow it once and show the real meaning.
 {
