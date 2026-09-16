@@ -27,6 +27,8 @@ Los geïmporteerde boeken en voortgang blijven in IndexedDB op dit apparaat; voo
 Importeer via Importeren of slepen. Automatisch deelt elk boek afzonderlijk in; je kunt ook voor de hele selectie een categorie, Geen categorie of + Nieuwe categorie… kiezen.
 Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart open je de boekacties, waaronder de categoriekeuze.
 Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk. Onder Aa kies je bij Pagina's of het boek als een of twee pagina's naast elkaar wordt getoond; Tekstbreedte begrenst de breedte per pagina.
+Selecteer minder dan 300 tekens en kies Opzoeken voor een korte uitleg uit Wiktionary of Wikipedia met bronlink, zonder sleutel of account. Uitleggen voegt optioneel een eigen vraag toe via je eigen API-sleutel, aanbieder en model. De sleutel blijft op dit apparaat; passage, boekgegevens en vraag gaan rechtstreeks naar je aanbieder. Beide acties vereisen internet. Selectie werkt in tekstformaten en Foliate-boeken met selecteerbare tekst; PDF toont alleen canvaspagina's en heeft geen selectieknop.
+
 De app werkt offline na de eerste online laadbeurt; PDF/DOCX/Markdown en fonts moeten eerst online geladen zijn.
 Vereist een moderne browser met native adoptedStyleSheets; HTTPS of localhost voor PWA, PNG-iconen volgen apart.
 

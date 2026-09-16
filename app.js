@@ -3,9 +3,46 @@ import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
 import { createCloud } from './sync.js';
 import { createImportIndex, planDedupe } from './dedupe.js';
+import { buildQueries, lookup, cancelLookup } from './lookup.js';
+import { PROVIDERS, buildRequest, ask, cancelAsk } from './ask.js';
 
 const STRINGS = {
     nl: {
+        lookup: 'Opzoeken',
+        lookupClose: 'Paneel sluiten',
+        lookupLoading: 'Opzoeken…',
+        lookupEmpty: "Niets gevonden voor '{term}'.",
+        lookupNetwork: 'Geen verbinding.',
+        lookupWikipedia: 'Lees verder op Wikipedia',
+        lookupWiktionary: 'Lees verder op Wiktionary',
+        askExplain: 'Uitleggen',
+        askSetup: 'Uitleg instellen',
+        askDisclosure: 'Je gebruikt je eigen API-sleutel. De geselecteerde passage, boektitel, auteur, hoofdstuk en je vraag gaan naar de gekozen aanbieder.',
+        askProvider: 'Aanbieder',
+        askModel: 'Model',
+        askOther: 'Anders…',
+        askBaseUrl: 'Basis-URL (HTTPS)',
+        askAdapter: 'API-formaat',
+        askOpenai: 'OpenAI-compatibel',
+        askAnthropic: 'Anthropic',
+        askKey: 'API-sleutel',
+        askKeyPage: 'Sleutel aanmaken bij aanbieder',
+        askRemove: 'Verwijderen',
+        askStoredKey: 'Opgeslagen sleutel: ••••{last}',
+        askQuestion: 'Je vraag',
+        askDefault: 'Leg deze passage uit.',
+        askLoading: 'Uitleg wordt geschreven…',
+        askPrice: 'Circa ${price} per vraag (500 invoer- en 500 uitvoertokens; werkelijk gebruik varieert).',
+        askFree: 'Gratis laag, zonder betaalgegevens. Google stelt wel een daglimiet in.',
+        askCheapest: 'Goedkoopste van deze modellen.',
+        askKeyError: 'Je sleutel werkt niet. Controleer hem in de instellingen.',
+        askRateLimit: 'Te veel verzoeken. Probeer het zo opnieuw.',
+        askNoAnswer: 'Er kwam geen antwoord terug.',
+        askNetwork: 'Geen verbinding.',
+        askRefusal: 'Deze passage wordt liever niet uitgelegd.',
+        askHttps: 'Gebruik een geldige HTTPS-basis-URL zonder inloggegevens, query of fragment.',
+        askStorage: 'De sleutel kon niet op dit apparaat worden opgeslagen.',
+        askEnterKey: 'Voer een sleutel in voor deze aanbieder.',
         account: 'Account',
         signIn: 'Inloggen',
         cloudTitle: 'Je bibliotheek overal',
@@ -191,6 +228,41 @@ const STRINGS = {
         libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
     },
     en: {
+        lookup: 'Look up',
+        lookupClose: 'Close panel',
+        lookupLoading: 'Looking up…',
+        lookupEmpty: "Nothing found for '{term}'.",
+        lookupNetwork: 'No connection.',
+        lookupWikipedia: 'Read more on Wikipedia',
+        lookupWiktionary: 'Read more on Wiktionary',
+        askExplain: 'Explain',
+        askSetup: 'Set up explanations',
+        askDisclosure: 'You use your own API key. The selected passage, book title, author, chapter and your question go to your chosen provider.',
+        askProvider: 'Provider',
+        askModel: 'Model',
+        askOther: 'Other',
+        askBaseUrl: 'Base URL (HTTPS)',
+        askAdapter: 'API format',
+        askOpenai: 'OpenAI-compatible',
+        askAnthropic: 'Anthropic',
+        askKey: 'API key',
+        askKeyPage: 'Create a key at your provider',
+        askRemove: 'Remove',
+        askStoredKey: 'Stored key: ••••{last}',
+        askQuestion: 'Your question',
+        askDefault: 'Explain this passage.',
+        askLoading: 'Writing explanation…',
+        askPrice: 'About ${price} per question (500 input and 500 output tokens; actual usage varies).',
+        askFree: 'Free tier, no payment details needed. Google does apply a daily limit.',
+        askCheapest: 'Cheapest of these models.',
+        askKeyError: 'Your key does not work. Check it in settings.',
+        askRateLimit: 'Too many requests. Try again shortly.',
+        askNoAnswer: 'No answer was returned.',
+        askNetwork: 'No connection.',
+        askRefusal: 'This passage cannot be explained.',
+        askHttps: 'Use a valid HTTPS base URL without credentials, query or fragment.',
+        askStorage: 'The key could not be saved on this device.',
+        askEnterKey: 'Enter a key for this provider.',
         account: 'Account',
         signIn: 'Sign in',
         cloudTitle: 'Your library everywhere',
@@ -1551,20 +1623,216 @@ function showBars() {
     hideBars(false);
     clearTimeout(active.barTimer);
     active.barTimer = setTimeout(() => {
-        if ($('#prefs').hidden && $('#toc').hidden && !$('#reader').querySelector('.reader-bar :focus-visible')) hideBars(true);
+        if ($('#prefs').hidden && $('#toc').hidden && $('#lookup-panel').hidden && !$('#reader').querySelector('.reader-bar :focus-visible')) hideBars(true);
     }, 2500);
 }
 function closePanels() {
     const focusedPanel = document.activeElement?.closest('.popover');
+    closeLookup();
     $('#prefs').hidden = $('#toc').hidden = true;
     $('#aa').setAttribute('aria-expanded', 'false');
     $('#toc-button').setAttribute('aria-expanded', 'false');
-    if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : '#toc-button').focus({ preventScroll: true });
+    if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : focusedPanel.id === 'lookup-panel' ? '#reader' : '#toc-button').focus({ preventScroll: true });
+}
+let selectedPassage = '', selectionDoc, lookupGeneration = 0, askGeneration = 0;
+function closeLookup() {
+    lookupGeneration++; askGeneration++;
+    cancelLookup(); cancelAsk();
+    $('#lookup-button').hidden = $('#lookup-panel').hidden = true;
+    $('#lookup-button').setAttribute('aria-expanded', 'false');
+    if ($('#ask-dialog').open) $('#ask-dialog').close();
+    selectionDoc?.getSelection()?.removeAllRanges();
+    selectedPassage = ''; selectionDoc = null;
+}
+function hookSelection(session, doc, root = doc.body) {
+    const changed = () => {
+        if (!live(session) || !$('#lookup-panel').hidden) return;
+        const selection = doc.getSelection();
+        if (!selection?.rangeCount || selection.isCollapsed || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)
+            || !buildQueries(selection.toString(), lang)) {
+            if (selectionDoc === doc) { $('#lookup-button').hidden = true; selectedPassage = ''; }
+            return;
+        }
+        selectedPassage = selection.toString().trim(); selectionDoc = doc;
+        const range = selection.getRangeAt(0).cloneRange();
+        range.collapse(false);
+        const rects = [...selection.getRangeAt(0).getClientRects()];
+        const caret = range.getBoundingClientRect();
+        const rect = caret.height ? caret : rects.at(-1);
+        if (!rect) return;
+        let x = rect.right, y = rect.bottom;
+        // Foliate iframe coordinates are local, including fixed-layout scaling.
+        for (let win = doc.defaultView; win && win !== window; win = win.parent) {
+            const iframe = win.frameElement;
+            if (!iframe) return;
+            const box = iframe.getBoundingClientRect();
+            x = box.left + x * box.width / (iframe.clientWidth || box.width);
+            y = box.top + y * box.height / (iframe.clientHeight || box.height);
+        }
+        const button = $('#lookup-button'); button.hidden = false;
+        const css = getComputedStyle(button), safe = side => parseFloat(css.getPropertyValue('--safe-' + side)) || 0;
+        const viewport = window.visualViewport;
+        const left = (viewport?.offsetLeft || 0) + safe('left') + 8;
+        const right = (viewport?.offsetLeft || 0) + (viewport?.width || innerWidth) - safe('right') - 8;
+        const top = Math.max((viewport?.offsetTop || 0) + safe('top') + 8, $('#top-bar').offsetHeight + 8);
+        const bottom = Math.min((viewport?.offsetTop || 0) + (viewport?.height || innerHeight) - safe('bottom') - 8, innerHeight - $('#bottom-bar').offsetHeight - 8);
+        if (bottom - top < button.offsetHeight || right - left < button.offsetWidth) { button.hidden = true; return; }
+        button.style.left = Math.max(left, Math.min(x, right - button.offsetWidth)) + 'px';
+        button.style.top = Math.max(top, Math.min(y + 8, bottom - button.offsetHeight)) + 'px';
+    };
+    listen(session, doc, 'selectionchange', changed);
+    listen(session, doc, 'pointerup', changed);
+    listen(session, doc, 'keyup', changed);
+    listen(session, doc, 'scroll', closeLookup, { passive: true });
+}
+function updateAskButton() {
+    const configured = !!readSetting('leeslamp.ask.key', '');
+    localize($('#ask-explain'), configured ? 'askExplain' : 'askSetup');
+    $('#ask-settings').hidden = !configured;
+}
+function setupLookup(session) {
+    listen(session, $('#lookup-button'), 'pointerdown', event => event.preventDefault());
+    listen(session, $('#lookup-button'), 'click', async () => {
+        const passage = selectedPassage, doc = selectionDoc;
+        const queries = buildQueries(passage, lang);
+        if (!queries) return;
+        closePanels(); selectedPassage = passage; selectionDoc = doc;
+        const generation = ++lookupGeneration;
+        $('#lookup-term').textContent = queries.term;
+        $('#lookup-panel').hidden = false;
+        $('#lookup-button').setAttribute('aria-expanded', 'true');
+        $('#ask-answer').textContent = ''; $('#ask-status').replaceChildren(); $('#ask-question').value = '';
+        updateAskButton();
+        $('#lookup-result').replaceChildren(localize(el('p', 'lookup-loading'), 'lookupLoading'));
+        $('#lookup-panel').focus({ preventScroll: true }); showBars();
+        try {
+            const result = await lookup(passage, lang);
+            if (!live(session) || generation !== lookupGeneration) return;
+            if (!result) { $('#lookup-result').replaceChildren(localize(el('p'), 'lookupEmpty', { term: queries.term })); return; }
+            const nodes = [el('h3', '', result.title)];
+            if (result.description) nodes.push(el('p', '', result.description));
+            nodes.push(el('p', '', result.text));
+            const link = localize(el('a'), result.kind === 'wikipedia' ? 'lookupWikipedia' : 'lookupWiktionary');
+            link.href = result.url; link.target = '_blank'; link.rel = 'noopener'; nodes.push(link);
+            $('#lookup-result').replaceChildren(...nodes);
+        } catch {
+            if (live(session) && generation === lookupGeneration) $('#lookup-result').replaceChildren(localize(el('p'), 'lookupNetwork'));
+        }
+    });
+    listen(session, window, 'resize', closeLookup);
+    if (window.visualViewport) { listen(session, window.visualViewport, 'resize', () => { $('#lookup-button').hidden = true; }); }
+    setupAsk(session);
+    session.cleanups.push(closeLookup);
+}
+function askConfig() {
+    const stored = readSetting('leeslamp.ask.provider', 'deepseek');
+    const [id, adapter] = stored.split(':');
+    const entry = PROVIDERS.find(provider => provider.id === id) || PROVIDERS[0];
+    return { provider: entry.id === 'custom' ? { ...entry, adapter: adapter === 'anthropic' ? 'anthropic' : 'openai', baseUrl: readSetting('leeslamp.ask.baseUrl', '') } : entry,
+        model: readSetting('leeslamp.ask.model', entry.models[0]?.id || ''), key: readSetting('leeslamp.ask.key', '') };
+}
+function setupAsk(session) {
+    let original;
+    const providerField = $('#ask-provider');
+    providerField.replaceChildren(...PROVIDERS.map(provider => {
+        const option = el('option'); option.value = provider.id;
+        if (provider.id === 'custom') localize(option, provider.label); else option.textContent = provider.label;
+        return option;
+    }));
+    const price = () => {
+        const provider = PROVIDERS.find(p => p.id === providerField.value);
+        const model = provider.models.find(m => m.id === $('#ask-model').value);
+        const node = $('#ask-price'); node.removeAttribute('data-i18n'); node.textContent = '';
+        if (model?.free) localize(node, 'askFree');
+        else if (model?.price) localize(node, 'askPrice', { price: ((model.price[0] + model.price[1]) * 500 / 1e6).toFixed(4) });
+        else if (model?.cheapest) localize(node, 'askCheapest');
+    };
+    const fields = () => {
+        const provider = PROVIDERS.find(p => p.id === providerField.value), custom = provider.id === 'custom';
+        $('#ask-custom').hidden = custom === false;
+        $('#ask-model').hidden = custom;
+        document.querySelector('label[for="ask-model"]').hidden = custom;
+        $('#ask-model').replaceChildren(...provider.models.map(model => Object.assign(el('option', '', model.id), { value: model.id })));
+        $('#ask-key-page').hidden = !provider.keyHint;
+        if (provider.keyHint) $('#ask-key-page').href = provider.keyHint; else $('#ask-key-page').removeAttribute('href');
+        price();
+    };
+    const open = () => {
+        original = askConfig();
+        providerField.value = original.provider.id; fields();
+        $('#ask-model').value = original.model;
+        $('#ask-custom-model').value = original.provider.id === 'custom' ? original.model : '';
+        $('#ask-base-url').value = original.provider.id === 'custom' ? original.provider.baseUrl : '';
+        $('#ask-adapter').value = original.provider.adapter;
+        $('#ask-key').value = '';
+        $('#ask-stored-key').replaceChildren();
+        if (original.key) $('#ask-stored-key').append(localize(el('span'), 'askStoredKey', { last: original.key.slice(-4) }));
+        $('#ask-remove').hidden = !original.key;
+        $('#ask-settings-error').replaceChildren(); price();
+        $('#ask-dialog').showModal();
+    };
+    listen(session, providerField, 'change', () => { fields(); $('#ask-key').value = ''; });
+    listen(session, $('#ask-model'), 'change', price);
+    listen(session, $('#ask-settings'), 'click', open);
+    listen(session, $('#ask-cancel'), 'click', () => $('#ask-dialog').close());
+    listen(session, $('#ask-dialog'), 'close', () => { $('#ask-key').value = ''; original = null; });
+    listen(session, $('#ask-dialog'), 'keydown', event => event.stopPropagation());
+    listen(session, $('#ask-remove'), 'click', () => {
+        cancelAsk(); askGeneration++;
+        $('#ask-status').replaceChildren();
+        try {
+            localStorage.removeItem('leeslamp.ask.key');
+            original.key = ''; $('#ask-key').value = ''; $('#ask-stored-key').replaceChildren(); $('#ask-remove').hidden = true;
+            updateAskButton();
+        } catch { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askStorage')); }
+    });
+    listen(session, $('#ask-settings-form'), 'submit', event => {
+        event.preventDefault();
+        const entry = PROVIDERS.find(p => p.id === providerField.value);
+        const provider = entry.id === 'custom' ? { ...entry, adapter: $('#ask-adapter').value, baseUrl: $('#ask-base-url').value.trim() } : entry;
+        const model = entry.id === 'custom' ? $('#ask-custom-model').value.trim() : $('#ask-model').value;
+        // Never reuse a stored secret after the destination or adapter changes.
+        const sameDestination = original && original.provider.id === provider.id && original.provider.baseUrl === provider.baseUrl && original.provider.adapter === provider.adapter;
+        const key = $('#ask-key').value.trim() || (sameDestination ? original.key : '');
+        if (!key) { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askEnterKey')); return; }
+        try { buildRequest(provider, { passage: '', question: '', model, key, language: lang }); }
+        catch (error) { $('#ask-settings-error').replaceChildren(localize(el('span'), error.key || 'askNoAnswer')); return; }
+        try {
+            // Clear first: an interrupted settings write cannot send the old key to a new host.
+            localStorage.removeItem('leeslamp.ask.key');
+            localStorage.setItem('leeslamp.ask.provider', provider.id === 'custom' ? `custom:${provider.adapter}` : provider.id);
+            localStorage.setItem('leeslamp.ask.model', model);
+            localStorage.setItem('leeslamp.ask.baseUrl', provider.baseUrl);
+            localStorage.setItem('leeslamp.ask.key', key);
+            cancelAsk(); askGeneration++; $('#ask-status').replaceChildren(); updateAskButton(); $('#ask-dialog').close();
+        } catch { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askStorage')); }
+    });
+    listen(session, $('#ask-form'), 'submit', async event => {
+        event.preventDefault();
+        const config = askConfig();
+        if (!config.key) { open(); return; }
+        const generation = ++askGeneration;
+        $('#ask-answer').textContent = '';
+        $('#ask-status').replaceChildren(localize(el('span', 'lookup-loading'), 'askLoading'));
+        const current = () => live(session) && generation === askGeneration && !$('#lookup-panel').hidden;
+        const chapter = session.chapter || [...(session.article?.querySelectorAll('h1,h2,h3') || [])].filter(h => h.getBoundingClientRect().top <= 80).at(-1)?.textContent;
+        try {
+            await ask({ ...config, passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
+                book: { title: session.record.title, author: session.record.author }, chapter, language: lang, signal: session.controller.signal,
+                onText: text => { if (current()) { $('#ask-status').replaceChildren(); $('#ask-answer').append(document.createTextNode(text)); } } });
+            if (current()) $('#ask-status').replaceChildren();
+        } catch (error) {
+            if (current() && error.name !== 'AbortError') {
+                $('#ask-answer').textContent = '';
+                $('#ask-status').replaceChildren(localize(el('span'), error.key || 'askNetwork'));
+            }
+        }
+    });
 }
 function contentClick(event) {
     const doc = event.target.ownerDocument;
     if (event.target.closest('a,button,input,select,textarea,[contenteditable]') || !doc.getSelection()?.isCollapsed) return;
-    if (!$('#prefs').hidden || !$('#toc').hidden) { closePanels(); showBars(); return; }
+    if (!$('#prefs').hidden || !$('#toc').hidden || !$('#lookup-panel').hidden) { closePanels(); showBars(); return; }
     if ($('#reader').classList.contains('bars-hidden')) showBars();
     else { clearTimeout(active?.barTimer); hideBars(true); }
 }
@@ -1574,7 +1842,7 @@ function keydown(event) {
     if (event.key === 'Tab') showBars();
     if (event.key === 'Escape') {
         event.preventDefault();
-        if (!$('#toc').hidden || !$('#prefs').hidden) { closePanels(); showBars(); }
+        if (!$('#toc').hidden || !$('#prefs').hidden || !$('#lookup-panel').hidden || !$('#lookup-button').hidden) { closePanels(); showBars(); }
         else void closeBook();
         return;
     }
@@ -1625,11 +1893,12 @@ async function openBook(record) {
     $('#slider').disabled = $('#prev').disabled = $('#next').disabled = true;
     applyPreferences(); showBars();
     $('#reader').focus({ preventScroll: true });
+    setupLookup(session);
     listen(session, document, 'keydown', keydown);
     listen(session, $('#reader'), 'focusin', showBars);
     listen(session, $('#reader'), 'pointermove', showBars, { passive: true });
     listen(session, document, 'pointerdown', e => {
-        if (!e.target.closest('#prefs,#aa,#toc,#toc-button')) closePanels();
+        if (!e.target.closest('#prefs,#aa,#toc,#toc-button,#lookup-button,#lookup-panel,#ask-dialog')) closePanels();
     });
     listen(session, document, 'visibilitychange', () => {
         if (document.hidden) { session.capture?.(); void saveProgress(session, true); }
@@ -1782,13 +2051,16 @@ async function openFoliate(session, file) {
     listen(session, view, 'load', ({ detail: { doc } }) => {
         if (view.isFixedLayout) styleFixedDocument(doc);
         else applyJustify(doc);
+        hookSelection(session, doc);
         listen(session, doc, 'keydown', keydown);
         listen(session, doc, 'pointermove', showBars, { passive: true });
         listen(session, doc, 'wheel', handleWheel, { passive: true });
         listen(session, doc, 'click', contentClick);
     });
     listen(session, view, 'relocate', ({ detail }) => {
+        closeLookup();
         const { fraction, tocItem, cfi } = detail;
+        session.chapter = tocItem?.label || '';
         // Some fixed-layout books do not expose section progress.
         const index = view.renderer.index ?? 0;
         const value = Number.isFinite(fraction) ? fraction : index / Math.max(1, view.book.sections.length - 1);
@@ -1817,6 +2089,7 @@ async function openFoliate(session, file) {
     }
 }
 function turn(direction) {
+    closeLookup();
     const session = active;
     if (!session?.ready) return;
     if (session.view) Promise.resolve(direction < 0 ? session.view.goLeft() : session.view.goRight())
@@ -1829,6 +2102,7 @@ function turn(direction) {
 $('#prev').addEventListener('click', () => turn(-1));
 $('#next').addEventListener('click', () => turn(1));
 $('#slider').addEventListener('input', e => {
+    closeLookup();
     const session = active;
     if (!session?.ready) return;
     const fraction = clamp(e.target.value);
@@ -1861,6 +2135,7 @@ function setupScroll(session) {
         progress(session, fraction, fraction, label);
     };
     listen(session, pane, 'scroll', () => {
+        closeLookup();
         if (pending) return;
         pending = true;
         frame(session, () => { pending = false; session.capture(); });
@@ -2038,6 +2313,7 @@ async function openText(session, file) {
     }
     if (!live(session)) return;
     session.pane = pane; session.article = article;
+    hookSelection(session, document, article);
     pane.append(article); $('#r-body').append(pane);
     applyPreferences();
     const headings = [...article.querySelectorAll('h1,h2,h3')];

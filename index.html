@@ -211,6 +211,20 @@
     #text article p,#text article li { hyphens:auto; }
     #text article h1,#text article h2,#text article h3 { letter-spacing:-.025em; line-height:1.3; scroll-margin-top:72px; }
     .popover { position:absolute; z-index:5; background:var(--rbg); color:var(--rfg); border:1px solid var(--rline); border-radius:2px; box-shadow:var(--shadow); animation:panel-in 500ms var(--ease) both; }
+    #lookup-button { position:fixed; z-index:6; min-height:36px; padding:8px 16px; background:var(--rbg); color:var(--accent); border:1px solid var(--rline); border-radius:2px; box-shadow:var(--shadow); transition:transform 150ms var(--ease),opacity 150ms var(--ease); }
+    #lookup-panel { position:fixed; top:max(64px,calc(env(safe-area-inset-top) + 56px)); right:max(16px,env(safe-area-inset-right)); width:min(384px,calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right))); max-height:calc(100dvh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow:auto; padding:16px; overflow-wrap:anywhere; }
+    #lookup-panel .panel-heading { margin-bottom:16px; }
+    #lookup-panel button,#ask-dialog button { min-height:36px; min-width:36px; }
+    #lookup-panel p { margin:8px 0; line-height:1.5; }
+    #lookup-panel a,#ask-dialog a { color:var(--accent); }
+    .lookup-actions { margin-top:16px; padding-top:16px; border-top:1px solid var(--rline); display:grid; gap:8px; }
+    #lookup-panel input,#ask-dialog input,#ask-dialog select { width:100%; min-height:36px; border:1px solid var(--rline,var(--line)); border-radius:2px; background:var(--rbg,var(--bg)); color:inherit; padding:8px; }
+    #ask-dialog { width:min(448px,calc(100% - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:1px solid var(--rline); border-radius:2px; background:var(--rbg); color:var(--rfg); box-shadow:var(--shadow); }
+    #ask-dialog::backdrop { background:#18251c66; }
+    #ask-dialog label { display:block; margin:16px 0 8px; }
+    #ask-price,#ask-stored-key { font-size:12px; color:var(--mute); }
+    #ask-answer { white-space:pre-wrap; }
+    #lookup-button { --safe-top:env(safe-area-inset-top,0px); --safe-right:env(safe-area-inset-right,0px); --safe-bottom:env(safe-area-inset-bottom,0px); --safe-left:env(safe-area-inset-left,0px); }
     .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--rline); padding-bottom:16px; margin-bottom:20px; }
     .panel-heading h2 { font-size:16px; letter-spacing:-.035em; font-weight:500; margin:0; }
     .panel-close { padding:4px; width:28px; min-height:28px; }
@@ -252,7 +266,8 @@
     #toc-list [aria-expanded="false"] + ol { display:none; }
     #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
     #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(560px,calc(100% - 32px)); max-height:60vh; overflow:auto; overflow-wrap:anywhere; background:var(--fg); color:var(--bg); border-left:3px solid var(--accent); padding:14px 20px; font-size:12px; border-radius:2px; box-shadow:var(--shadow); white-space:pre-line; animation:toast-in 500ms var(--ease); }
-    #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
+    #loading { position:absolute; inset:0; display:grid; place-content:center; }
+    #loading,.lookup-loading { color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
     #loading.downloading { justify-items:center; gap:16px; text-align:center; }
     .download-vessel { width:80px; height:112px; color:var(--accent); }
     .download-level { transform:translateY(calc((1 - var(--download-fraction, .45)) * 100px)); transition:transform 300ms ease-out; }
@@ -439,6 +454,37 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
   </dialog>
   <section id="reader" hidden aria-label="Boeklezer" tabindex="-1" data-i18n="" data-i18n-aria-label="reader">
     <div id="r-body"></div>
+    <button id="lookup-button" hidden data-i18n="lookup" aria-controls="lookup-panel" aria-expanded="false">Opzoeken</button>
+    <aside id="lookup-panel" class="popover" hidden role="dialog" aria-labelledby="lookup-term" tabindex="-1">
+      <div class="panel-heading"><h2 id="lookup-term"></h2><button data-close-panel data-i18n="lookupClose">Paneel sluiten</button></div>
+      <div id="lookup-result" role="status" aria-live="polite"></div>
+      <form id="ask-form" class="lookup-actions">
+        <label for="ask-question" data-i18n="askQuestion">Je vraag</label>
+        <input id="ask-question" type="text" maxlength="1000" data-i18n="" data-i18n-placeholder="askDefault" placeholder="Leg deze passage uit.">
+        <button id="ask-explain" type="submit" data-i18n="askSetup">Uitleg instellen</button>
+        <button id="ask-settings" type="button" data-i18n="askSetup" hidden>Uitleg instellen</button>
+      </form>
+      <p id="ask-status" role="status"></p><p id="ask-answer" aria-live="polite"></p>
+    </aside>
+    <dialog id="ask-dialog" aria-labelledby="ask-title">
+      <form id="ask-settings-form">
+        <h2 id="ask-title" data-i18n="askSetup">Uitleg instellen</h2>
+        <p data-i18n="askDisclosure">Je gebruikt je eigen API-sleutel. De geselecteerde passage, boektitel, auteur, hoofdstuk en je vraag gaan naar de gekozen aanbieder.</p>
+        <label for="ask-provider" data-i18n="askProvider">Aanbieder</label><select id="ask-provider"></select>
+        <label for="ask-model" data-i18n="askModel">Model</label><select id="ask-model"></select>
+        <div id="ask-custom" hidden>
+          <label for="ask-custom-model" data-i18n="askModel">Model</label><input id="ask-custom-model" type="text">
+          <label for="ask-base-url" data-i18n="askBaseUrl">Basis-URL (HTTPS)</label><input id="ask-base-url" type="url" placeholder="https://">
+          <label for="ask-adapter" data-i18n="askAdapter">API-formaat</label><select id="ask-adapter"><option value="openai" data-i18n="askOpenai">OpenAI-compatibel</option><option value="anthropic" data-i18n="askAnthropic">Anthropic</option></select>
+        </div>
+        <p id="ask-price"></p>
+        <label for="ask-key" data-i18n="askKey">API-sleutel</label><input id="ask-key" type="password" autocomplete="off" spellcheck="false">
+        <p id="ask-stored-key"></p><button id="ask-remove" type="button" data-i18n="askRemove" hidden>Verwijderen</button>
+        <p><a id="ask-key-page" target="_blank" rel="noopener noreferrer" data-i18n="askKeyPage">Sleutel aanmaken bij aanbieder</a></p>
+        <p id="ask-settings-error" role="alert"></p>
+        <div class="dialog-actions"><button id="ask-cancel" type="button" data-i18n="cancel">Annuleren</button><button type="submit" data-i18n="save">Opslaan</button></div>
+      </form>
+    </dialog>
     <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek" data-i18n="" data-i18n-title="back" data-i18n-aria-label="back"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span data-i18n="library">Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false" data-i18n="" data-i18n-title="toc" data-i18n-aria-label="toc"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false" data-i18n="" data-i18n-title="readingPrefs" data-i18n-aria-label="readingPrefs">Aa</button></div></div>
     <div id="bottom-bar" class="reader-bar"><button id="prev" title="Vorige pagina" aria-label="Vorige pagina" data-i18n="" data-i18n-title="prev" data-i18n-aria-label="prev"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button><div class="slider-wrap"><span class="slider-rail" aria-hidden="true"><span id="slider-fill"></span></span><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks" data-i18n="" data-i18n-aria-label="readingProgress"><datalist id="ticks"></datalist></div><button id="next" title="Volgende pagina" aria-label="Volgende pagina" data-i18n="" data-i18n-title="next" data-i18n-aria-label="next"><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button><span id="progress-label">0%</span></div>
     <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave" data-i18n="" data-i18n-aria-label="toc"><div class="panel-heading"><h2 data-i18n="contents">Inhoud</h2><button class="panel-close" data-close-panel title="Inhoudsopgave sluiten" aria-label="Inhoudsopgave sluiten" data-i18n="" data-i18n-title="closeToc" data-i18n-aria-label="closeToc"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="toc-list"></div></aside>
