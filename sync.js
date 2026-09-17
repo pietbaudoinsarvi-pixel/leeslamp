@@ -1,5 +1,5 @@
 // Only these fields cross the account boundary. Device flags and blobs never do.
-const textFields = ['category', 'title', 'author', 'name', 'ext', 'kind'];
+const textFields = ['category', 'title', 'author', 'name', 'ext', 'kind', 'driveFile'];
 const numberFields = ['fraction', 'opened', 'size', 'lastModified', 'added'];
 const booleanFields = ['hidden', 'finished', 'categoryManual', 'autoCategorized', 'metadataReady'];
 export function recordData(record = {}) {
@@ -281,7 +281,7 @@ export function createCloud(local, ui) {
                 check(uid, generation);
                 pushed.set(item.id, item.updated);
                 await deleteFile(uid, generation, await findName(uid, generation, name(item.id, true)));
-                await deleteFile(uid, generation, await findFile(uid, generation, item.id));
+                if (!item.keepFile) await deleteFile(uid, generation, await findFile(uid, generation, item.id));
             }
             check(uid, generation);
             localStorage.setItem(queueKey, JSON.stringify(queue().filter(value => !(value.sub === uid && value.id === item.id && value.updated === item.updated))));
@@ -306,7 +306,8 @@ export function createCloud(local, ui) {
                 check(uid, generation);
                 if (item.error) throw item.error;
                 const flags = {};
-                if (file) {
+                // Never upload an empty file: it would replace a good copy on every other device.
+                if (file && file.size) {
                     flags.driveFile = await uploadFile(uid, generation, record, file);
                     flags.fileSynced = flags.cloudFile = true;
                 }
@@ -344,9 +345,6 @@ export function createCloud(local, ui) {
                     await local.flush();
                     check(uid, generation);
                     await pull(uid, generation);
-                    check(uid, generation);
-                    // A book that arrived twice under two ids is merged before its removal is pushed.
-                    await local.dedupe?.();
                     await drain(uid, generation);
                     // ponytail: small race between pull and push; add per-field merge if it ever bites.
                     await push(uid, generation);
@@ -441,13 +439,13 @@ export function createCloud(local, ui) {
             catch { failure(true); }
             finally { receive(null); await authWork; }
         },
-        remove(record) {
+        remove(record, options = {}) {
             try {
                 if (!enabled) return;
                 const uid = ready ? session.user.id : localStorage.getItem(userKey);
                 if (!uid) return;
                 const items = queue().filter(item => !(item.sub === uid && item.id === record.id));
-                items.push({ sub: uid, id: record.id, updated: Date.now() });
+                items.push({ sub: uid, id: record.id, updated: Date.now(), keepFile: options.keepFile === true });
                 localStorage.setItem(queueKey, JSON.stringify(items));
                 changed();
             } catch { failure(true); }
@@ -496,6 +494,7 @@ export function createCloud(local, ui) {
                 blob = new Blob(chunks, { type: response.headers.get('Content-Type') || '' });
             } else { blob = await response.blob(); received = blob.size; }
             check(uid, generation);
+            if (!blob.size) throw new Error('Empty download');
             onProgress?.(received, total);
             console.info(`cloud download ${record.name} ${received} ${Math.round(performance.now() - started)}`);
             await local.saveFile(record.id, blob, () => valid(uid, generation));

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { setImmediate as tick } from 'node:timers/promises';
 import { createCloud, mergeRow, planPush, pool, recordData } from '../sync.js';
-import { planDedupe } from '../dedupe.js';
 
 const source = { kind: 'fs', root: 'local-root', path: 'local.epub' };
 const cover = new Blob(['cover'], { type: 'image/jpeg' });
@@ -157,15 +156,6 @@ function fixture({ records = [], remote = [], uid = 'user-a', previous, confirm 
             else if (next !== undefined) localBooks.set(id, structuredClone(next));
         },
         file: async id => files.get(id), saveFile: async (id, file, valid) => { if (valid()) files.set(id, file); },
-        // The app merges copies of one file after the pull; the fixture runs the same plan.
-        async dedupe() {
-            calls.push({ type: 'dedupe', size: localBooks.size });
-            const plan = planDedupe([...localBooks.values()], { hasFile: id => files.has(id) });
-            for (const { from, to } of plan.transfers) files.set(to, files.get(from));
-            for (const { record, changes } of plan.updates) localBooks.set(record.id, { ...localBooks.get(record.id), ...changes, updated: Date.now() });
-            for (const record of plan.removals) { localBooks.delete(record.id); files.delete(record.id); cloud.remove(record); }
-            return plan.removals.length;
-        },
         flush: async () => {}, refresh: async () => { calls.push({ type: 'refresh', size: localBooks.size, time: Date.now() }); },
         async wipe() { calls.push({ type: 'wipe' }); localBooks.clear(); files.clear(); },
     };
@@ -393,27 +383,6 @@ try {
     assert.ok(f.localBooks.has('new')); assert.ok(f.files.has('new'));
     assert.ok(!JSON.stringify([...f.values]).includes('access-user'));
     console.log('PASS: list-driven downloads, pull before push, resumable ebooks, multipart JSON/cover, truthful flags, safe merge, tombstone cleanup and sign-out retention.');
-
-    const twin = (id, extra) => ({ id, title: 'Twin', name: 'twin.epub', ext: 'epub', kind: 'foliate',
-        category: '', source: { kind: 'blob' }, size: 99, updated: 20, synced: 20, ...extra });
-    const twins = fixture({ records: [twin('keep', { added: 30, cloudFile: true, fileSynced: true }),
-        twin('gone', { added: 40, fraction: .5, opened: 900, loc: 'page-2' })] });
-    await twins.cloud.start();
-    assert.deepEqual([...twins.localBooks.keys()], ['keep'], 'one file, one book');
-    assert.equal(twins.localBooks.get('keep').fraction, .5, 'the newest reading progress survives');
-    assert.equal(twins.localBooks.get('keep').loc, 'page-2');
-    assert.equal(twins.localBooks.get('keep').added, 30);
-    assert.ok(twins.files.has('keep')); assert.equal(twins.files.has('gone'), false);
-    // Merging sits between pull and push, so the removal and the kept book travel in one round.
-    assert.ok(twins.calls.findIndex(call => call.type === 'dedupe')
-        < twins.calls.findIndex(call => call.type === 'multipart'));
-    assert.ok(twins.calls.some(call => call.type === 'multipart'
-        && call.metadata.name === 'book-gone.json' && call.metadata.appProperties.deleted === '1'));
-    assert.ok(twins.calls.some(call => call.type === 'multipart' && call.metadata.name === 'book-keep.json'
-        && call.metadata.appProperties.deleted === '0'));
-    assert.deepEqual(JSON.parse(twins.values.get('leeslamp.cloud.tombstones')), []);
-    assert.equal(twins.statuses.at(-1), 'cloudSynced');
-    console.log('PASS: duplicate books merge between pull and push; the removal is pushed in the same round.');
 
     const many = fixture({ remote: Array.from({ length: 1001 }, (_, id) => ({ ...row, id: `remote-${id}`, file: false, cover: false })) });
     await many.cloud.start();
@@ -669,3 +638,13 @@ try {
     globalThis.fetch = originalFetch;
 }
 console.log('PASS: all cloud tests (Node built-ins only; no network or browser).');
+
+// An empty file is never a book: it must not reach Drive and an empty download must not be stored.
+{
+    const empty = fixture({ records: [{ ...book, id: 'hollow', source: { kind: 'blob' }, updated: 30 }] });
+    empty.files.set('hollow', new Blob([], { type: 'application/pdf' }));
+    await empty.cloud.start();
+    assert.ok(!empty.calls.some(call => call.type === 'initiate' || call.type === 'bytes'), 'no ebook upload for an empty file');
+    assert.ok(!empty.localBooks.get('hollow')?.cloudFile, 'the record is not marked as available in the cloud');
+    console.log('PASS: an empty file is never uploaded and never marked as a cloud copy.');
+}

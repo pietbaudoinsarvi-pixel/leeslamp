@@ -2,10 +2,54 @@ import './vendor/foliate-js/view.js';
 import { createTOCView } from './vendor/foliate-js/ui/tree.js';
 import { autoCategory, collectSubjects, normalizeCategory, sameCategory } from './autocat.js';
 import { createCloud } from './sync.js';
-import { bookKey, planDedupe } from './dedupe.js';
+import { createImportIndex, planDedupe } from './dedupe.js';
+import { buildQueries, lookup, cancelLookup } from './lookup.js';
+import { PROVIDERS, buildRequest, passageContext } from './ask.js';
+import { runAgent, cancelAgent, bookContextReader } from './agent.js';
 
 const STRINGS = {
     nl: {
+        lookup: 'Opzoeken',
+        lookupClose: 'Paneel sluiten',
+        lookupLoading: 'Opzoeken…',
+        lookupEmpty: "Niets gevonden voor '{term}'.",
+        lookupNetwork: 'Geen verbinding.',
+        lookupWikipedia: 'Lees verder op Wikipedia',
+        lookupWiktionary: 'Lees verder op Wiktionary',
+        askExplain: 'Uitleggen',
+        askSetup: 'Uitleg instellen',
+        askDisclosure: 'Je gebruikt je eigen API-sleutel. De geselecteerde passage, boektitel, auteur, hoofdstuk en je vraag gaan naar de gekozen aanbieder.',
+        askProvider: 'Aanbieder',
+        askModel: 'Model',
+        askOther: 'Anders…',
+        askBaseUrl: 'Basis-URL (HTTPS)',
+        askAdapter: 'API-formaat',
+        askOpenai: 'OpenAI-compatibel',
+        askAnthropic: 'Anthropic',
+        askKey: 'API-sleutel',
+        askKeyPage: 'Sleutel aanmaken bij aanbieder',
+        askRemove: 'Verwijderen',
+        askStoredKey: 'Opgeslagen sleutel: ••••{last}',
+        askQuestion: 'Je vraag',
+        askDefault: 'Leg deze passage uit.',
+        askLoading: 'Uitleg wordt geschreven…',
+        agentSearch: 'Wikipedia doorzoeken: {term}',
+        agentRead: 'Wikipedia lezen: {term}',
+        agentWord: 'Wiktionary raadplegen: {term}',
+        agentBook: 'Meer uit het boek lezen…',
+        agentSources: 'Bronnen',
+        agentPrivacy: 'Wanneer het model iets opzoekt, worden de zoektermen die het kiest naar Wikipedia of Wiktionary gestuurd.',
+        askPrice: 'Circa ${price} per vraag (500 invoer- en 500 uitvoertokens; werkelijk gebruik varieert).',
+        askFree: 'Gratis laag, zonder betaalgegevens. Google stelt wel een daglimiet in.',
+        askCheapest: 'Goedkoopste van deze modellen.',
+        askKeyError: 'Je sleutel werkt niet. Controleer hem in de instellingen.',
+        askRateLimit: 'Te veel verzoeken. Probeer het zo opnieuw.',
+        askNoAnswer: 'Er kwam geen antwoord terug.',
+        askNetwork: 'Geen verbinding.',
+        askRefusal: 'Deze passage wordt liever niet uitgelegd.',
+        askHttps: 'Gebruik een geldige HTTPS-basis-URL zonder inloggegevens, query of fragment.',
+        askStorage: 'De sleutel kon niet op dit apparaat worden opgeslagen.',
+        askEnterKey: 'Voer een sleutel in voor deze aanbieder.',
         account: 'Account',
         signIn: 'Inloggen',
         cloudTitle: 'Je bibliotheek overal',
@@ -25,6 +69,15 @@ const STRINGS = {
         cloudFailed: 'Synchroniseren is mislukt. Probeer het opnieuw.',
         cloudSwitch: 'Dit apparaat bevat de bibliotheek van een ander account. Lokale boeken wissen en die van dit account laden?',
         cloudSwitchConfirm: 'Wissen en laden',
+        dedupeBooks: 'Dubbele boeken opruimen',
+        dedupeConfirm: '{count} boeken staan dubbel in je bibliotheek. Leeslamp houdt per boek één exemplaar en neemt de verste leesvoortgang mee. Er wordt geen bestand uit je Google Drive verwijderd.',
+        dedupeConfirmOne: 'Eén boek staat dubbel in je bibliotheek. Leeslamp houdt één exemplaar en neemt de verste leesvoortgang mee. Er wordt geen bestand uit je Google Drive verwijderd.',
+        dedupeRun: 'Opruimen',
+        dedupeDone: '{count} dubbele boeken opgeruimd.',
+        dedupeDoneOne: 'Eén dubbel boek opgeruimd.',
+        dedupeUnsafe: 'Opruimen gestopt: een boek of bestandsverwijzing is gewijzigd of ontbreekt. Je overige boeken zijn behouden.',
+        importSkipped: '{count} stonden al in je bibliotheek en zijn overgeslagen.',
+        importSkippedOne: '1 stond al in je bibliotheek en is overgeslagen.',
         updateAvailable: 'Nieuwe versie beschikbaar',
         refreshApp: 'Vernieuwen',
         updateLater: 'Later',
@@ -63,6 +116,9 @@ const STRINGS = {
         title: 'Titel',
         author: 'Auteur',
         added: 'Toegevoegd',
+        nothingAdded: 'Er is niets toegevoegd. Kies ebookbestanden, bijvoorbeeld epub of pdf; afbeeldingen en andere bestanden worden overgeslagen.',
+        emptyFile: '{name}: het bestand is leeg. Controleer of het volledig op je apparaat staat en niet alleen in de cloud.',
+        emptyBook: 'Dit boek is leeg: er zitten geen gegevens in het bestand. Verwijder het en voeg het opnieuw toe.',
         emptyTitle: 'Ruimte voor je volgende boek.',
         emptyDrag: 'Sleep je boeken hierheen.',
         emptyText: 'Je bibliotheek begint met één goed verhaal.',
@@ -102,6 +158,8 @@ const STRINGS = {
         narrower: 'Smallere tekst',
         widthSetting: 'Breedtestand',
         layout: 'Weergave',
+        columns: 'Pagina’s',
+        columnsLabel: 'Aantal pagina’s naast elkaar',
         layoutLabel: 'Pagina of scrollen',
         page: 'Pagina',
         scroll: 'Scrollen',
@@ -136,10 +194,6 @@ const STRINGS = {
         importProgress: 'Importeren… {current}/{total}',
         addedOne: '{count} boek toegevoegd',
         addedOther: '{count} boeken toegevoegd',
-        alreadyInLibraryOne: '{count} stond al in de bibliotheek',
-        alreadyInLibraryOther: '{count} stonden al in de bibliotheek',
-        duplicatesMergedOne: '{count} dubbel boek samengevoegd',
-        duplicatesMergedOther: '{count} dubbele boeken samengevoegd',
         scanFolder: 'Scannen… {name}',
         scanProgress: 'Scannen… {current}/{total}',
         scanResult: '{found} boeken gevonden, {added} nieuw',
@@ -184,6 +238,47 @@ const STRINGS = {
         libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
     },
     en: {
+        lookup: 'Look up',
+        lookupClose: 'Close panel',
+        lookupLoading: 'Looking up…',
+        lookupEmpty: "Nothing found for '{term}'.",
+        lookupNetwork: 'No connection.',
+        lookupWikipedia: 'Read more on Wikipedia',
+        lookupWiktionary: 'Read more on Wiktionary',
+        askExplain: 'Explain',
+        askSetup: 'Set up explanations',
+        askDisclosure: 'You use your own API key. The selected passage, book title, author, chapter and your question go to your chosen provider.',
+        askProvider: 'Provider',
+        askModel: 'Model',
+        askOther: 'Other',
+        askBaseUrl: 'Base URL (HTTPS)',
+        askAdapter: 'API format',
+        askOpenai: 'OpenAI-compatible',
+        askAnthropic: 'Anthropic',
+        askKey: 'API key',
+        askKeyPage: 'Create a key at your provider',
+        askRemove: 'Remove',
+        askStoredKey: 'Stored key: ••••{last}',
+        askQuestion: 'Your question',
+        askDefault: 'Explain this passage.',
+        askLoading: 'Writing explanation…',
+        agentSearch: 'Searching Wikipedia: {term}',
+        agentRead: 'Reading Wikipedia: {term}',
+        agentWord: 'Looking up in Wiktionary: {term}',
+        agentBook: 'Reading more of the book…',
+        agentSources: 'Sources',
+        agentPrivacy: 'When the model looks something up, the search terms it chooses are sent to Wikipedia or Wiktionary.',
+        askPrice: 'About ${price} per question (500 input and 500 output tokens; actual usage varies).',
+        askFree: 'Free tier, no payment details needed. Google does apply a daily limit.',
+        askCheapest: 'Cheapest of these models.',
+        askKeyError: 'Your key does not work. Check it in settings.',
+        askRateLimit: 'Too many requests. Try again shortly.',
+        askNoAnswer: 'No answer was returned.',
+        askNetwork: 'No connection.',
+        askRefusal: 'This passage cannot be explained.',
+        askHttps: 'Use a valid HTTPS base URL without credentials, query or fragment.',
+        askStorage: 'The key could not be saved on this device.',
+        askEnterKey: 'Enter a key for this provider.',
         account: 'Account',
         signIn: 'Sign in',
         cloudTitle: 'Your library everywhere',
@@ -203,6 +298,15 @@ const STRINGS = {
         cloudFailed: 'Sync failed. Please try again.',
         cloudSwitch: 'This device contains the library of another account. Clear local books and load those of this account?',
         cloudSwitchConfirm: 'Clear and load',
+        dedupeBooks: 'Clean up duplicates',
+        dedupeConfirm: '{count} books are in your library twice. Leeslamp keeps one of each and takes the furthest reading progress with it. No file is removed from your Google Drive.',
+        dedupeConfirmOne: 'One book is in your library twice. Leeslamp keeps one copy and takes the furthest reading progress with it. No file is removed from your Google Drive.',
+        dedupeRun: 'Clean up',
+        dedupeDone: '{count} duplicate books cleaned up.',
+        dedupeDoneOne: 'One duplicate book cleaned up.',
+        dedupeUnsafe: 'Cleanup stopped: a book or file reference changed or is missing. Your remaining books have been kept.',
+        importSkipped: '{count} were already in your library and were skipped.',
+        importSkippedOne: '1 was already in your library and was skipped.',
         updateAvailable: 'New version available',
         refreshApp: 'Refresh',
         updateLater: 'Later',
@@ -241,6 +345,9 @@ const STRINGS = {
         title: 'Title',
         author: 'Author',
         added: 'Date added',
+        nothingAdded: 'Nothing was added. Choose ebook files such as epub or pdf; images and other files are skipped.',
+        emptyFile: '{name}: the file is empty. Check that it is fully downloaded to your device, not only stored in the cloud.',
+        emptyBook: 'This book is empty: the file contains no data. Remove it and add it again.',
         emptyTitle: 'Make room for your next read.',
         emptyDrag: 'Drop your books here.',
         emptyText: 'One good story is all it takes to begin.',
@@ -280,6 +387,8 @@ const STRINGS = {
         narrower: 'Narrower text',
         widthSetting: 'Width setting',
         layout: 'Layout',
+        columns: 'Pages',
+        columnsLabel: 'Number of pages side by side',
         layoutLabel: 'Page or scroll',
         page: 'Page',
         scroll: 'Scroll',
@@ -314,10 +423,6 @@ const STRINGS = {
         importProgress: 'Importing… {current}/{total}',
         addedOne: '{count} book added',
         addedOther: '{count} books added',
-        alreadyInLibraryOne: '{count} was already in your library',
-        alreadyInLibraryOther: '{count} were already in your library',
-        duplicatesMergedOne: '{count} duplicate merged',
-        duplicatesMergedOther: '{count} duplicates merged',
         scanFolder: 'Scanning… {name}',
         scanProgress: 'Scanning… {current}/{total}',
         scanResult: '{found} books found, {added} new',
@@ -575,7 +680,7 @@ const THEMES = {
     zwart: { bg: '#000000', fg: '#bdc5bc', link: '#a9c9b9', dark: true },
 };
 const fonts = ['Lora', 'Lato', 'Georgia', 'Lexend', 'Boek'];
-const defaults = { theme: 'dag', font: 'Lora', size: 18, lh: 1.5, width: 2, flow: 'paginated', justify: true };
+const defaults = { theme: 'dag', font: 'Lora', size: 18, lh: 1.5, width: 2, columns: 2, flow: 'paginated', justify: true };
 let savedPrefs;
 try { savedPrefs = JSON.parse(readSetting('leeslamp.prefs', '{}')); } catch { savedPrefs = {}; }
 const prefs = { ...defaults, ...savedPrefs };
@@ -584,6 +689,7 @@ if (!fonts.includes(prefs.font)) prefs.font = defaults.font;
 prefs.size = Math.round(clamp(prefs.size, 12, 32));
 prefs.lh = Math.round(clamp(prefs.lh, 1.2, 2) * 10) / 10;
 prefs.width = Math.round(clamp(prefs.width, 1, 4));
+prefs.columns = prefs.columns === 1 ? 1 : 2;
 prefs.flow = prefs.flow === 'scrolled' ? 'scrolled' : 'paginated';
 prefs.justify = typeof prefs.justify === 'boolean' ? prefs.justify : true;
 const widthPx = () => ({ 1: 1100, 2: 900, 3: 760, 4: 640 })[prefs.width];
@@ -637,6 +743,7 @@ systemTheme.addEventListener('change', applyMode);
 
 // Library. Only metadata and small cover blobs are loaded on startup.
 let books = [], roots = [], filter = 'all', query = '', searchTimer, importing = false;
+let dedupeCount = -1;
 const coverURLs = new Map();
 const coverBlobs = new Map();
 // Keep filtered-out cards detached so returning to All books also reuses images.
@@ -693,7 +800,15 @@ function renderFilters() {
     if (focusedFilter) [...$('#filter-list').children].find(node => node.dataset.filter === focusedFilter)?.focus({ preventScroll: true });
     $('#filters-toggle-label').textContent = filterName();
 }
+function renderDedupe() {
+    const count = visibleBooks().length;
+    if (count === dedupeCount) return;
+    dedupeCount = count;
+    const hidden = planDedupe(books, roots).total === 0;
+    for (const id of ['#dedupe', '#dedupe-mobile']) $(id).hidden = hidden;
+}
 function renderLibrary() {
+    renderDedupe();
     renderFilters();
     const sort = filter === 'reading' ? 'opened' : $('#sort').value;
     $('#sort').hidden = filter === 'reading';
@@ -782,6 +897,7 @@ function updateBookCard(card, book) {
             const image = cover.querySelector('img') || el('img');
             if (image.src !== coverURLs.get(book.id)) image.src = coverURLs.get(book.id);
             attr(image, 'alt', ''); attr(image, 'loading', 'lazy'); attr(image, 'decoding', 'async');
+            attr(image, 'draggable', 'false');
             if (!image.parentNode) { cover.querySelector('.placeholder')?.remove(); cover.prepend(image); }
             if (cover.classList.contains('no-cover')) cover.classList.remove('no-cover');
         } else {
@@ -897,6 +1013,7 @@ $('#grid').addEventListener('click', async e => {
                 let file = (await get('files', record.id))?.file;
                 if (root && await readPermission(root.handle)) file = await resolveFile(root, record.source.path);
                 if (!file) throw new Error(t('fileStorageMissing'));
+                if (!file.size) throw new Error('empty file');
                 await cloud.upload(record, file);
             } catch { toast(() => t('cloudFailed')); }
             return;
@@ -1092,9 +1209,102 @@ $('#category-form').addEventListener('submit', e => {
     }
 });
 const yieldUI = () => new Promise(resolve => setTimeout(resolve, 0));
+// Revalidate inside the write transaction: no stale plan may delete a record.
+const stableValue = value => Array.isArray(value) ? value.map(stableValue)
+    : value && typeof value === 'object' && !(value instanceof Blob)
+        ? Object.keys(value).sort().map(key => [key, stableValue(value[key])]) : value;
+// Key order differs between a stored record and the in-memory rebuild, so compare a stable form.
+const dedupeRevision = record => JSON.stringify(record && stableValue({ ...record,
+    cover: record.cover ? [record.cover.size, record.cover.type] : null }));
+async function applyDedupeBatch(expectedKeep, keep, drops) {
+    if (!drops.length || drops.length > 24 || drops.some(record => record.id === keep.id)) throw new Error(t('dedupeUnsafe'));
+    const expected = [expectedKeep, ...drops];
+    const db = await database();
+    await new Promise((resolve, reject) => {
+        const transaction = db.transaction(['books', 'files'], 'readwrite');
+        const store = transaction.objectStore('books'), files = transaction.objectStore('files');
+        transaction.oncomplete = resolve;
+        transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('dedupeUnsafe')));
+        let pending = expected.length;
+        for (const record of expected) {
+            const request = store.get(record.id);
+            request.onsuccess = () => {
+                if (dedupeRevision(request.result) !== dedupeRevision(record)) { transaction.abort(); return; }
+                if (--pending) return;
+                const existingFile = files.get(keep.id);
+                existingFile.onsuccess = () => {
+                    // Retain a local ebook too, including when a linked root is unavailable.
+                    let remaining = drops.length, saved = !!existingFile.result;
+                    const commit = () => {
+                        store.put(keep);
+                        for (const drop of drops) {
+                            if (drop.source?.kind === 'fs') store.put({ ...drop, hidden: true,
+                                synced: drop.updated });
+                            else { store.delete(drop.id); files.delete(drop.id); }
+                        }
+                    };
+                    for (const drop of drops) {
+                        const request = files.get(drop.id);
+                        request.onsuccess = () => {
+                            if (!saved && request.result?.file) {
+                                files.put({ id: keep.id, file: request.result.file }); saved = true;
+                            }
+                            if (--remaining === 0) commit();
+                        };
+                    }
+                };
+            };
+        }
+    });
+}
+async function dedupeBooks() {
+    if (importing) { toast(() => t('importBusy')); return; }
+    const plan = planDedupe(books, roots);
+    if (!plan.total) return;
+    const dialog = $('#dedupe-dialog');
+    if (dialog.open) return;
+    if (filtersOpen) setFiltersOpen(false);
+    dialog.returnValue = '';
+    $('#dedupe-summary').textContent = t(plan.total === 1 ? 'dedupeConfirmOne' : 'dedupeConfirm', { count: plan.total });
+    const confirmed = new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
+    dialog.showModal();
+    if (!await confirmed || importing) return;
+    setImporting(true);
+    let count = 0;
+    try {
+        // Fail closed before the first write if sync changed the confirmed plan.
+        const fresh = planDedupe(books, roots);
+        if (dedupeRevision(fresh) !== dedupeRevision(plan)) throw new Error(t('dedupeUnsafe'));
+        for (const group of plan.groups) {
+            let expectedKeep = books.find(record => record.id === group.keep.id);
+            const keep = { ...group.keep, ...group.merged,
+                coverSynced: expectedKeep.cover === group.merged.cover ? expectedKeep.coverSynced : false };
+            for (let i = 0; i < group.drop.length; i += 24) {
+                const drops = group.drop.slice(i, i + 24).map(({ keepFile, ...record }) => record);
+                keep.updated = Math.max(Date.now(), (expectedKeep.updated || 0) + 1);
+                await applyDedupeBatch(expectedKeep, keep, drops);
+                Object.assign(expectedKeep, keep);
+                for (const drop of drops) {
+                    // Cleanup promises to retain ALL Drive ebooks, including extra copies.
+                    cloud?.remove(drop, { keepFile: true });
+                    const existing = books.find(record => record.id === drop.id);
+                    if (drop.source?.kind === 'fs') Object.assign(existing, { hidden: true, synced: drop.updated });
+                    else { books = books.filter(record => record.id !== drop.id); localFiles.delete(drop.id); }
+                    presentedBooks.delete(drop.id); count++;
+                }
+                if ((await get('files', keep.id))?.file) localFiles.add(keep.id);
+                cloud?.changed(); renderLibrary(); await yieldUI();
+            }
+        }
+        toast(() => t(count === 1 ? 'dedupeDoneOne' : 'dedupeDone', { count }));
+    } catch (error) { report(() => t('dedupeUnsafe'), error); }
+    finally { setImporting(false); dedupeCount = -1; renderLibrary(); }
+}
+for (const selector of ['#dedupe', '#dedupe-mobile']) $(selector).addEventListener('click', () => void dedupeBooks());
 function setImporting(value) {
     importing = value;
-    for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan']) $(selector).disabled = value;
+    if (!value) dedupeCount = -1;
+    for (const selector of ['#import-button', '#empty-import', '#find-books', '#link-folder', '#folder-import', '#rescan', '#dedupe', '#dedupe-mobile']) $(selector).disabled = value;
     for (const button of $('#grid').querySelectorAll('.delete')) {
         button.disabled = value;
         cardStates.delete(button.closest('.card'));
@@ -1171,46 +1381,34 @@ async function importFiles(files, categoryForFile) {
         if (category === null) { setImporting(false); return; }
         categoryForFile = () => category;
     }
-    let count = 0, duplicates = 0;
+    let count = 0, skipped = 0;
+    let identities = createImportIndex(books), indexedCount = books.length;
     const failures = [];
     const pipeline = categoryPipeline();
     let lastRender = performance.now();
-    // One entry per file already in the library, so the same file never becomes a second book.
-    const known = new Map();
-    for (const record of books) {
-        const key = record.hidden === true ? '' : bookKey(record);
-        if (key && !known.has(key)) known.set(key, record);
-    }
     for (const [index, file] of [...files].entries()) {
         toast(() => t('importProgress', { current: index + 1, total: files.length }), 0);
         const ext = file.name.split('.').pop().toLowerCase(), kind = kindFor(ext);
         if (!kind) { failures.push(() => t('unsupportedFile', { name: file.name })); continue; }
-        const key = bookKey({ name: file.name, ext, size: file.size });
-        const present = known.get(key);
-        if (present) {
-            try {
-                // The book is already there; an unreadable copy gets these bytes instead of a second card.
-                if (!localFiles.has(present.id) && !localSource(present)) {
-                    await tx('files', 'readwrite', store => store.put({ id: present.id, file }));
-                    localFiles.add(present.id);
-                }
-                duplicates++;
-            } catch (error) { console.error(error); failures.push(() => failureMessage(() => t('importFailedFile', { name: file.name }), error)); }
-            await yieldUI();
-            continue;
-        }
+        // An empty file is never a book: iOS hands one back for documents that live only in iCloud.
+        if (!file.size) { failures.push(() => t('emptyFile', { name: file.name })); continue; }
         try {
             const category = categoryForFile(file);
             const record = newRecord(file, category === AUTO_CATEGORY ? '' : category, { kind: 'blob' });
+            if (indexedCount !== books.length) { identities = createImportIndex(books); indexedCount = books.length; }
+            if (identities.has(record)) { skipped++; await yieldUI(); continue; }
             record.categoryManual = category !== AUTO_CATEGORY;
             try {
                 const meta = await importMetadata(file, kind);
                 Object.assign(record, meta, { title: meta.title.trim() || record.title, metadataReady: true });
             } catch (error) { console.warn(file.name, error); failures.push(() => t('metadataSkipped', { name: file.name })); }
+            // Metadata parsing yields to sync; recheck the current visible library.
+            identities = createImportIndex(books);
+            if (identities.has(record)) { skipped++; await yieldUI(); continue; }
             pipeline.local(record);
             await bookTransaction(record, file);
             books.push(record);
-            if (key) known.set(key, record);
+            identities.add(record); indexedCount = books.length;
             count++;
             pipeline.remember(record.category);
             await pipeline.enqueue(record);
@@ -1220,15 +1418,11 @@ async function importFiles(files, categoryForFile) {
     }
     try { await pipeline.flush(); }
     catch (error) { report(() => t('categoryFailed'), error); }
-    let merged = 0;
-    try { merged = await dedupeLibrary(true); }
-    catch (error) { console.warn('Duplicate merge unavailable', error); }
     setImporting(false);
     renderLibrary();
-    const summary = t(count === 1 ? 'addedOne' : 'addedOther', { count })
-        + (duplicates ? ` · ${t(duplicates === 1 ? 'alreadyInLibraryOne' : 'alreadyInLibraryOther', { count: duplicates })}` : '')
-        + categorySummary(pipeline) + duplicateSummary(merged);
-    toast(() => [summary, ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    toast(() => [count ? t(count === 1 ? 'addedOne' : 'addedOther', { count }) + categorySummary(pipeline) : t('nothingAdded'),
+        ...(skipped ? [t(skipped === 1 ? 'importSkippedOne' : 'importSkipped', { count: skipped })] : []),
+        ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
 }
 
 // File handles are stored once per root. Neither enumeration nor scanning stores ebook blobs.
@@ -1253,47 +1447,13 @@ async function enumerate(directory, entries, prefix = '', category = '') {
 }
 const writeBookBatch = async (records, removed = []) => {
     for (const record of records) record.updated = Date.now();
-    await recoverStorage(async () => {
-        const db = await database();
-        await new Promise((resolve, reject) => {
-            const transaction = db.transaction(['books', 'files'], 'readwrite');
-            transaction.oncomplete = resolve;
-            transaction.onerror = transaction.onabort = event => reject(event.target.error ?? transaction.error ?? new Error(t('storageFailed')));
-            const store = transaction.objectStore('books'), fileStore = transaction.objectStore('files');
-            for (const record of records) store.put(record);
-            for (const record of removed) { store.delete(record.id); fileStore.delete(record.id); }
-        });
+    await tx('books', 'readwrite', store => {
+        for (const record of records) store.put(record);
+        for (const record of removed) store.delete(record.id);
     });
-    for (const record of removed) { localFiles.delete(record.id); cloud?.remove(record); }
+    for (const record of removed) cloud?.remove(record);
     cloud?.changed();
 };
-const localSource = record => record.source?.kind === 'fs' && roots.some(root => root.id === record.source.root);
-// Merge copies of one file into a single book: progress, category, metadata and cover are kept,
-// the file on disk is never touched and a copy from a linked folder is hidden instead of deleted.
-let dedupeWork = Promise.resolve(0);
-const dedupeLibrary = (force = false) => dedupeWork = dedupeWork.catch(() => 0)
-    .then(() => importing && !force ? 0 : mergeDuplicates());
-async function mergeDuplicates() {
-    const plan = planDedupe(books, { activeId: active?.record.id ?? null,
-        hasFile: id => localFiles.has(id), reachable: localSource });
-    if (!plan.updates.length && !plan.removals.length) return 0;
-    for (const { from, to } of plan.transfers) {
-        const file = (await get('files', from))?.file;
-        if (!file) continue;
-        await tx('files', 'readwrite', store => store.put({ id: to, file }));
-        localFiles.add(to);
-    }
-    for (const { record, changes } of plan.updates) Object.assign(record, changes);
-    await writeBookBatch(plan.updates.map(item => item.record), plan.removals);
-    const removed = new Set(plan.removals.map(record => record.id));
-    if (removed.size) {
-        books = books.filter(record => !removed.has(record.id));
-        for (const id of removed) presentedBooks.delete(id);
-    }
-    const hidden = plan.updates.filter(item => item.changes.hidden === true).length;
-    renderLibrary();
-    return removed.size + hidden;
-}
 // A position that waited in localStorage is written as soon as the library is known again.
 async function flushStash() {
     const stash = readStash();
@@ -1316,8 +1476,6 @@ async function flushStash() {
         for (const record of restore) clearStash(record.id);
     } catch (error) { console.warn('Stored progress waits for storage', error); }
 }
-const duplicateSummary = count => count
-    ? ` · ${t(count === 1 ? 'duplicatesMergedOne' : 'duplicatesMergedOther', { count })}` : '';
 async function scanRoots(selected) {
     const work = [], failures = [];
     let found = 0, added = 0, lastRender = 0;
@@ -1396,13 +1554,9 @@ async function scanRoots(selected) {
         refresh(); await yieldUI();
     }
     await pipeline.flush();
-    let merged = 0;
-    try { merged = await dedupeLibrary(true); }
-    catch (error) { console.warn('Duplicate merge unavailable', error); }
     refresh(true);
-    toast(() => [t('scanResult', { found, added }) + categorySummary(pipeline) + duplicateSummary(merged),
-        ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
-    return { found, added, merged, failures: failures.map(message => message()) };
+    toast(() => [t('scanResult', { found, added }) + categorySummary(pipeline), ...failures.map(message => message())].join('\n'), failures.length ? 12000 : 4000);
+    return { found, added, failures: failures.map(message => message()) };
 }
 async function linkFolder(handle) {
     if (importing || $('#category-dialog').open) throw new Error(t('importRunning'));
@@ -1468,18 +1622,24 @@ $('#file-input').addEventListener('change', e => {
     e.target.value = ''; findBooksImport = false;
     void importFiles(files, automatic ? () => AUTO_CATEGORY : undefined);
 });
-let dragDepth = 0;
+let dragDepth = 0, draggingInside = false;
+// A cover dragged out of the grid is a file to the browser; dropping it back would import a stray image.
+document.addEventListener('dragstart', () => { draggingInside = true; }, true);
+document.addEventListener('dragend', () => { draggingInside = false; }, true);
+// Bubble phase, so this runs after the library's own drop handler has seen the flag.
+document.addEventListener('drop', () => { draggingInside = false; });
 $('#library').addEventListener('dragenter', e => {
-    if (!e.dataTransfer.types.includes('Files')) return;
+    if (draggingInside || !e.dataTransfer.types.includes('Files')) return;
     e.preventDefault(); dragDepth++; $('#library').classList.add('dragging');
 });
 $('#library').addEventListener('dragover', e => {
-    if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+    if (!draggingInside && e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
 });
 $('#library').addEventListener('dragleave', () => {
     if (--dragDepth <= 0) { dragDepth = 0; $('#library').classList.remove('dragging'); }
 });
 $('#library').addEventListener('drop', async e => {
+    if (draggingInside) { dragDepth = 0; $('#library').classList.remove('dragging'); return; }
     e.preventDefault(); dragDepth = 0; $('#library').classList.remove('dragging');
     const files = [...e.dataTransfer.files];
     // Capture promises synchronously: the drag data store expires after this event dispatch.
@@ -1555,20 +1715,235 @@ function showBars() {
     hideBars(false);
     clearTimeout(active.barTimer);
     active.barTimer = setTimeout(() => {
-        if ($('#prefs').hidden && $('#toc').hidden && !$('#reader').querySelector('.reader-bar :focus-visible')) hideBars(true);
+        if ($('#prefs').hidden && $('#toc').hidden && $('#lookup-panel').hidden && !$('#reader').querySelector('.reader-bar :focus-visible')) hideBars(true);
     }, 2500);
 }
 function closePanels() {
     const focusedPanel = document.activeElement?.closest('.popover');
+    closeLookup();
     $('#prefs').hidden = $('#toc').hidden = true;
     $('#aa').setAttribute('aria-expanded', 'false');
     $('#toc-button').setAttribute('aria-expanded', 'false');
-    if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : '#toc-button').focus({ preventScroll: true });
+    if (focusedPanel && active) $(focusedPanel.id === 'prefs' ? '#aa' : focusedPanel.id === 'lookup-panel' ? '#reader' : '#toc-button').focus({ preventScroll: true });
+}
+let selectedPassage = '', selectionDoc, selectionRange, selectionRoot, lookupGeneration = 0, askGeneration = 0;
+function closeLookup() {
+    lookupGeneration++; askGeneration++;
+    cancelLookup(); cancelAgent();
+    $('#lookup-button').hidden = $('#lookup-panel').hidden = true;
+    $('#lookup-button').setAttribute('aria-expanded', 'false');
+    if ($('#ask-dialog').open) $('#ask-dialog').close();
+    selectionDoc?.getSelection()?.removeAllRanges();
+    selectedPassage = ''; selectionDoc = null; selectionRange = selectionRoot = null;
+}
+function hookSelection(session, doc, root = doc.body) {
+    const changed = () => {
+        if (!live(session) || !$('#lookup-panel').hidden) return;
+        const selection = doc.getSelection();
+        if (!selection?.rangeCount || selection.isCollapsed || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)
+            || !buildQueries(selection.toString(), lang)) {
+            if (selectionDoc === doc) { $('#lookup-button').hidden = true; selectedPassage = ''; selectionRange = selectionRoot = null; }
+            return;
+        }
+        selectedPassage = selection.toString().trim(); selectionDoc = doc;
+        const range = selection.getRangeAt(0).cloneRange();
+        selectionRange = range.cloneRange();
+        // PDF context stays inside this page's text layer; text and Foliate
+        // already supply their article or section body as the root.
+        selectionRoot = root.id === 'pdf'
+            ? (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement)?.closest('.textLayer')
+            : root;
+        range.collapse(false);
+        const rects = [...selection.getRangeAt(0).getClientRects()];
+        const caret = range.getBoundingClientRect();
+        const rect = caret.height ? caret : rects.at(-1);
+        if (!rect) return;
+        let x = rect.right, y = rect.bottom;
+        // Foliate iframe coordinates are local, including fixed-layout scaling.
+        for (let win = doc.defaultView; win && win !== window; win = win.parent) {
+            const iframe = win.frameElement;
+            if (!iframe) return;
+            const box = iframe.getBoundingClientRect();
+            x = box.left + x * box.width / (iframe.clientWidth || box.width);
+            y = box.top + y * box.height / (iframe.clientHeight || box.height);
+        }
+        const button = $('#lookup-button'); button.hidden = false;
+        const css = getComputedStyle(button), safe = side => parseFloat(css.getPropertyValue('--safe-' + side)) || 0;
+        const viewport = window.visualViewport;
+        const left = (viewport?.offsetLeft || 0) + safe('left') + 8;
+        const right = (viewport?.offsetLeft || 0) + (viewport?.width || innerWidth) - safe('right') - 8;
+        const top = Math.max((viewport?.offsetTop || 0) + safe('top') + 8, $('#top-bar').offsetHeight + 8);
+        const bottom = Math.min((viewport?.offsetTop || 0) + (viewport?.height || innerHeight) - safe('bottom') - 8, innerHeight - $('#bottom-bar').offsetHeight - 8);
+        if (bottom - top < button.offsetHeight || right - left < button.offsetWidth) { button.hidden = true; return; }
+        button.style.left = Math.max(left, Math.min(x, right - button.offsetWidth)) + 'px';
+        button.style.top = Math.max(top, Math.min(y + 8, bottom - button.offsetHeight)) + 'px';
+    };
+    listen(session, doc, 'selectionchange', changed);
+    listen(session, doc, 'pointerup', changed);
+    listen(session, doc, 'keyup', changed);
+    listen(session, doc, 'scroll', closeLookup, { passive: true });
+}
+function updateAskButton() {
+    const configured = !!readSetting('leeslamp.ask.key', '');
+    localize($('#ask-explain'), configured ? 'askExplain' : 'askSetup');
+    $('#ask-settings').hidden = !configured;
+}
+function setupLookup(session) {
+    listen(session, $('#lookup-button'), 'pointerdown', event => event.preventDefault());
+    listen(session, $('#lookup-button'), 'click', async () => {
+        const passage = selectedPassage, doc = selectionDoc, range = selectionRange, root = selectionRoot;
+        const queries = buildQueries(passage, lang);
+        if (!queries) return;
+        closePanels(); selectedPassage = passage; selectionDoc = doc; selectionRange = range; selectionRoot = root;
+        const generation = ++lookupGeneration;
+        $('#lookup-term').textContent = queries.term;
+        $('#lookup-panel').hidden = false;
+        $('#lookup-button').setAttribute('aria-expanded', 'true');
+        $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren(); $('#ask-status').replaceChildren(); $('#ask-question').value = '';
+        updateAskButton();
+        $('#lookup-result').replaceChildren(localize(el('p', 'lookup-loading'), 'lookupLoading'));
+        $('#lookup-panel').focus({ preventScroll: true }); showBars();
+        try {
+            const result = await lookup(passage, lang);
+            if (!live(session) || generation !== lookupGeneration) return;
+            if (!result) { $('#lookup-result').replaceChildren(localize(el('p'), 'lookupEmpty', { term: queries.term })); return; }
+            const nodes = [el('h3', '', result.title)];
+            if (result.description) nodes.push(el('p', '', result.description));
+            nodes.push(el('p', '', result.text));
+            const link = localize(el('a'), result.kind === 'wikipedia' ? 'lookupWikipedia' : 'lookupWiktionary');
+            link.href = result.url; link.target = '_blank'; link.rel = 'noopener'; nodes.push(link);
+            $('#lookup-result').replaceChildren(...nodes);
+        } catch {
+            if (live(session) && generation === lookupGeneration) $('#lookup-result').replaceChildren(localize(el('p'), 'lookupNetwork'));
+        }
+    });
+    listen(session, window, 'resize', closeLookup);
+    if (window.visualViewport) { listen(session, window.visualViewport, 'resize', () => { $('#lookup-button').hidden = true; }); }
+    setupAsk(session);
+    session.cleanups.push(closeLookup);
+}
+function askConfig() {
+    const stored = readSetting('leeslamp.ask.provider', 'deepseek');
+    const [id, adapter] = stored.split(':');
+    const entry = PROVIDERS.find(provider => provider.id === id) || PROVIDERS[0];
+    return { provider: entry.id === 'custom' ? { ...entry, adapter: adapter === 'anthropic' ? 'anthropic' : 'openai', baseUrl: readSetting('leeslamp.ask.baseUrl', '') } : entry,
+        model: readSetting('leeslamp.ask.model', entry.models[0]?.id || ''), key: readSetting('leeslamp.ask.key', '') };
+}
+function setupAsk(session) {
+    let original;
+    const providerField = $('#ask-provider');
+    providerField.replaceChildren(...PROVIDERS.map(provider => {
+        const option = el('option'); option.value = provider.id;
+        if (provider.id === 'custom') localize(option, provider.label); else option.textContent = provider.label;
+        return option;
+    }));
+    const price = () => {
+        const provider = PROVIDERS.find(p => p.id === providerField.value);
+        const model = provider.models.find(m => m.id === $('#ask-model').value);
+        const node = $('#ask-price'); node.removeAttribute('data-i18n'); node.textContent = '';
+        if (model?.free) localize(node, 'askFree');
+        else if (model?.price) localize(node, 'askPrice', { price: ((model.price[0] + model.price[1]) * 500 / 1e6).toFixed(4) });
+        else if (model?.cheapest) localize(node, 'askCheapest');
+    };
+    const fields = () => {
+        const provider = PROVIDERS.find(p => p.id === providerField.value), custom = provider.id === 'custom';
+        $('#ask-custom').hidden = custom === false;
+        $('#ask-model').hidden = custom;
+        document.querySelector('label[for="ask-model"]').hidden = custom;
+        $('#ask-model').replaceChildren(...provider.models.map(model => Object.assign(el('option', '', model.id), { value: model.id })));
+        $('#ask-key-page').hidden = !provider.keyHint;
+        if (provider.keyHint) $('#ask-key-page').href = provider.keyHint; else $('#ask-key-page').removeAttribute('href');
+        price();
+    };
+    const open = () => {
+        original = askConfig();
+        providerField.value = original.provider.id; fields();
+        $('#ask-model').value = original.model;
+        $('#ask-custom-model').value = original.provider.id === 'custom' ? original.model : '';
+        $('#ask-base-url').value = original.provider.id === 'custom' ? original.provider.baseUrl : '';
+        $('#ask-adapter').value = original.provider.adapter;
+        $('#ask-key').value = '';
+        $('#ask-stored-key').replaceChildren();
+        if (original.key) $('#ask-stored-key').append(localize(el('span'), 'askStoredKey', { last: original.key.slice(-4) }));
+        $('#ask-remove').hidden = !original.key;
+        $('#ask-settings-error').replaceChildren(); price();
+        $('#ask-dialog').showModal();
+    };
+    listen(session, providerField, 'change', () => { fields(); $('#ask-key').value = ''; });
+    listen(session, $('#ask-model'), 'change', price);
+    listen(session, $('#ask-settings'), 'click', open);
+    listen(session, $('#ask-cancel'), 'click', () => $('#ask-dialog').close());
+    listen(session, $('#ask-dialog'), 'close', () => { $('#ask-key').value = ''; original = null; });
+    listen(session, $('#ask-dialog'), 'keydown', event => event.stopPropagation());
+    listen(session, $('#ask-remove'), 'click', () => {
+        cancelAgent(); askGeneration++;
+        $('#ask-status').replaceChildren();
+        try {
+            localStorage.removeItem('leeslamp.ask.key');
+            original.key = ''; $('#ask-key').value = ''; $('#ask-stored-key').replaceChildren(); $('#ask-remove').hidden = true;
+            updateAskButton();
+        } catch { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askStorage')); }
+    });
+    listen(session, $('#ask-settings-form'), 'submit', event => {
+        event.preventDefault();
+        const entry = PROVIDERS.find(p => p.id === providerField.value);
+        const provider = entry.id === 'custom' ? { ...entry, adapter: $('#ask-adapter').value, baseUrl: $('#ask-base-url').value.trim() } : entry;
+        const model = entry.id === 'custom' ? $('#ask-custom-model').value.trim() : $('#ask-model').value;
+        // Never reuse a stored secret after the destination or adapter changes.
+        const sameDestination = original && original.provider.id === provider.id && original.provider.baseUrl === provider.baseUrl && original.provider.adapter === provider.adapter;
+        const key = $('#ask-key').value.trim() || (sameDestination ? original.key : '');
+        if (!key) { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askEnterKey')); return; }
+        try { buildRequest(provider, { passage: '', question: '', model, key, language: lang }); }
+        catch (error) { $('#ask-settings-error').replaceChildren(localize(el('span'), error.key || 'askNoAnswer')); return; }
+        try {
+            // Clear first: an interrupted settings write cannot send the old key to a new host.
+            localStorage.removeItem('leeslamp.ask.key');
+            localStorage.setItem('leeslamp.ask.provider', provider.id === 'custom' ? `custom:${provider.adapter}` : provider.id);
+            localStorage.setItem('leeslamp.ask.model', model);
+            localStorage.setItem('leeslamp.ask.baseUrl', provider.baseUrl);
+            localStorage.setItem('leeslamp.ask.key', key);
+            cancelAgent(); askGeneration++; $('#ask-status').replaceChildren(); updateAskButton(); $('#ask-dialog').close();
+        } catch { $('#ask-settings-error').replaceChildren(localize(el('span'), 'askStorage')); }
+    });
+    listen(session, $('#ask-form'), 'submit', async event => {
+        event.preventDefault();
+        const config = askConfig();
+        if (!config.key) { open(); return; }
+        const generation = ++askGeneration;
+        $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren();
+        $('#ask-status').replaceChildren(localize(el('span', 'lookup-loading'), 'askLoading'));
+        const current = () => live(session) && generation === askGeneration && !$('#lookup-panel').hidden;
+        const chapter = session.chapter || [...(session.article?.querySelectorAll('h1,h2,h3') || [])].filter(h => h.getBoundingClientRect().top <= 80).at(-1)?.textContent;
+        try {
+            const context = passageContext(selectionRange, selectionRoot);
+            const result = await runAgent({ ...config, ...context, readMore: bookContextReader(selectionRange, selectionRoot, context), passage: selectedPassage, question: $('#ask-question').value.trim() || t('askDefault'),
+                book: { title: session.record.title, author: session.record.author }, chapter, language: lang, signal: session.controller.signal,
+                onStatus: (key, values) => { if (current()) $('#ask-status').replaceChildren(localize(el('span', 'lookup-loading'), key, values)); },
+                onText: text => { if (current()) { $('#ask-status').replaceChildren(); $('#ask-answer').append(document.createTextNode(text)); } } });
+            if (current()) {
+                $('#ask-status').replaceChildren();
+                if (result.sources.length) {
+                    const list = el('ul');
+                    for (const source of result.sources) {
+                        const item = el('li'), link = el('a', '', source.title);
+                        link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+                        item.append(link); list.append(item);
+                    }
+                    $('#ask-sources').replaceChildren(localize(el('h3'), 'agentSources'), list);
+                }
+            }
+        } catch (error) {
+            if (current() && error.name !== 'AbortError') {
+                $('#ask-answer').textContent = ''; $('#ask-sources').replaceChildren();
+                $('#ask-status').replaceChildren(localize(el('span'), error.key || 'askNetwork'));
+            }
+        }
+    });
 }
 function contentClick(event) {
     const doc = event.target.ownerDocument;
     if (event.target.closest('a,button,input,select,textarea,[contenteditable]') || !doc.getSelection()?.isCollapsed) return;
-    if (!$('#prefs').hidden || !$('#toc').hidden) { closePanels(); showBars(); return; }
+    if (!$('#prefs').hidden || !$('#toc').hidden || !$('#lookup-panel').hidden) { closePanels(); showBars(); return; }
     if ($('#reader').classList.contains('bars-hidden')) showBars();
     else { clearTimeout(active?.barTimer); hideBars(true); }
 }
@@ -1578,7 +1953,7 @@ function keydown(event) {
     if (event.key === 'Tab') showBars();
     if (event.key === 'Escape') {
         event.preventDefault();
-        if (!$('#toc').hidden || !$('#prefs').hidden) { closePanels(); showBars(); }
+        if (!$('#toc').hidden || !$('#prefs').hidden || !$('#lookup-panel').hidden || !$('#lookup-button').hidden) { closePanels(); showBars(); }
         else void closeBook();
         return;
     }
@@ -1629,11 +2004,12 @@ async function openBook(record) {
     $('#slider').disabled = $('#prev').disabled = $('#next').disabled = true;
     applyPreferences(); showBars();
     $('#reader').focus({ preventScroll: true });
+    setupLookup(session);
     listen(session, document, 'keydown', keydown);
     listen(session, $('#reader'), 'focusin', showBars);
     listen(session, $('#reader'), 'pointermove', showBars, { passive: true });
     listen(session, document, 'pointerdown', e => {
-        if (!e.target.closest('#prefs,#aa,#toc,#toc-button')) closePanels();
+        if (!e.target.closest('#prefs,#aa,#toc,#toc-button,#lookup-button,#lookup-panel,#ask-dialog')) closePanels();
     });
     listen(session, document, 'visibilitychange', () => {
         if (document.hidden) { session.capture?.(); void saveProgress(session, true); }
@@ -1693,6 +2069,7 @@ async function openBook(record) {
         } else file = (await get('files', record.id))?.file;
         if (!live(session)) return;
         if (!file) throw new Error(t('fileStorageMissing'));
+        if (!file.size) { resolvingFile = false; throw Object.assign(new Error('empty file'), { empty: true }); }
         resolvingFile = false;
         if (record.kind === 'foliate') await openFoliate(session, file);
         else if (record.kind === 'pdf') await openPDF(session, file);
@@ -1708,7 +2085,8 @@ async function openBook(record) {
     } catch (error) {
         if (live(session)) {
             await closeBook();
-            report(() => resolvingFile ? t('fileMissing', { name: record.name })
+            report(() => error?.empty ? t('emptyBook')
+                : resolvingFile ? t('fileMissing', { name: record.name })
                 : t('openFailed', { title: record.title }), error);
         }
     }
@@ -1787,13 +2165,16 @@ async function openFoliate(session, file) {
     listen(session, view, 'load', ({ detail: { doc } }) => {
         if (view.isFixedLayout) styleFixedDocument(doc);
         else applyJustify(doc);
+        hookSelection(session, doc);
         listen(session, doc, 'keydown', keydown);
         listen(session, doc, 'pointermove', showBars, { passive: true });
         listen(session, doc, 'wheel', handleWheel, { passive: true });
         listen(session, doc, 'click', contentClick);
     });
     listen(session, view, 'relocate', ({ detail }) => {
+        closeLookup();
         const { fraction, tocItem, cfi } = detail;
+        session.chapter = tocItem?.label || '';
         // Some fixed-layout books do not expose section progress.
         const index = view.renderer.index ?? 0;
         const value = Number.isFinite(fraction) ? fraction : index / Math.max(1, view.book.sections.length - 1);
@@ -1822,6 +2203,7 @@ async function openFoliate(session, file) {
     }
 }
 function turn(direction) {
+    closeLookup();
     const session = active;
     if (!session?.ready) return;
     if (session.view) Promise.resolve(direction < 0 ? session.view.goLeft() : session.view.goRight())
@@ -1834,6 +2216,7 @@ function turn(direction) {
 $('#prev').addEventListener('click', () => turn(-1));
 $('#next').addEventListener('click', () => turn(1));
 $('#slider').addEventListener('input', e => {
+    closeLookup();
     const session = active;
     if (!session?.ready) return;
     const fraction = clamp(e.target.value);
@@ -1866,6 +2249,7 @@ function setupScroll(session) {
         progress(session, fraction, fraction, label);
     };
     listen(session, pane, 'scroll', () => {
+        closeLookup();
         if (pending) return;
         pending = true;
         frame(session, () => { pending = false; session.capture(); });
@@ -1879,7 +2263,7 @@ function setupScroll(session) {
     });
 }
 
-// PDF: placeholders for every page, canvases only inside the observer's near range.
+// PDF: placeholders for every page, canvases and text only inside the observer's near range.
 async function openPDF(session, file) {
     const pdfjs = await loadPDF();
     if (!live(session)) return;
@@ -1893,6 +2277,7 @@ async function openPDF(session, file) {
     if (!live(session)) return;
     const pane = el('div'); pane.id = 'pdf'; pane.tabIndex = 0; localize(pane, 'readPDF', {}, 'aria-label');
     session.pane = pane;
+    hookSelection(session, document, pane);
     const fragment = document.createDocumentFragment();
     session.pages = Array.from({ length: doc.numPages }, (_, index) => {
         const box = el('div', 'page');
@@ -1900,7 +2285,7 @@ async function openPDF(session, file) {
         box.dataset.page = index;
         localize(box, 'pageNumber', { page: index + 1 }, 'aria-label');
         fragment.append(box);
-        return { box, index, visible: false, generation: 0, task: null, canvas: null, rendering: false };
+        return { box, index, visible: false, generation: 0, task: null, canvas: null, textTask: null, textLayer: null, rendering: false };
     });
     pane.append(fragment); $('#r-body').append(pane);
     const measure = () => { session.pageTops = session.pages.map(p => p.box.offsetTop); };
@@ -1913,6 +2298,8 @@ async function openPDF(session, file) {
     function discard(page) {
         page.generation++;
         page.task?.cancel(); page.task = null;
+        page.textTask?.cancel(); page.textTask = null;
+        page.textLayer?.remove(); page.textLayer = null;
         if (page.canvas) { page.canvas.remove(); page.canvas.width = page.canvas.height = 0; page.canvas = null; }
         page.rendering = false;
     }
@@ -1930,15 +2317,31 @@ async function openPDF(session, file) {
             if (!width) return;
             page.box.style.aspectRatio = `${base.width} / ${base.height}`;
             scheduleMeasure();
-            const scaled = pdfPage.getViewport({ scale: width / base.width * (devicePixelRatio || 1) });
+            const scaled = pdfPage.getViewport({ scale: width / base.width });
+            const outputScale = devicePixelRatio || 1;
             const canvas = el('canvas');
-            canvas.width = Math.ceil(scaled.width); canvas.height = Math.ceil(scaled.height);
+            canvas.width = Math.ceil(scaled.width * outputScale); canvas.height = Math.ceil(scaled.height * outputScale);
             localize(canvas, 'pageNumber', { page: page.index + 1 }, 'aria-label');
-            const task = pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: scaled });
+            const task = pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: scaled,
+                transform: [outputScale, 0, 0, outputScale, 0, 0] });
             page.task = task; page.canvas = canvas; page.box.append(canvas);
             await task.promise;
             if (!valid()) return;
             page.task = null;
+            const textContentSource = await pdfPage.getTextContent();
+            // Let queued canvas work proceed before laying out selectable text.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            if (!valid()) return;
+            const container = el('div', 'textLayer');
+            container.setAttribute('aria-hidden', 'true');
+            container.style.setProperty('--scale-factor', scaled.scale);
+            page.textLayer = container; page.box.append(container);
+            // Confirmed in the cached CDN 4.10.38 build: export { ce as TextLayer }.
+            const layer = new pdfjs.TextLayer({ textContentSource, container, viewport: scaled });
+            page.textTask = layer;
+            await layer.render();
+            if (!valid()) return;
+            page.textTask = null;
             pdfPage.cleanup();
         } catch (error) {
             if (valid() && error.name !== 'RenderingCancelledException') {
@@ -1955,17 +2358,25 @@ async function openPDF(session, file) {
     }, { root: pane, rootMargin: '100% 0px' });
     for (const page of session.pages) observer.observe(page.box);
     session.refreshPDF = () => {
+        closeLookup();
         for (const page of session.pages) discard(page);
         measure();
         // Resize may not change intersection thresholds, so explicitly queue near pages.
         for (const page of session.pages) if (page.visible) void render(page);
     };
     const resize = new ResizeObserver(() => {
+        closeLookup();
+        for (const page of session.pages) discard(page);
         clearTimeout(session.resizeTimer);
         session.resizeTimer = setTimeout(() => { if (live(session)) session.refreshPDF(); }, 150);
     });
     resize.observe(pane);
-    session.cleanups.push(() => { observer.disconnect(); resize.disconnect(); for (const page of session.pages) discard(page); });
+    session.cleanups.push(() => {
+        observer.disconnect(); resize.disconnect();
+        for (const page of session.pages) discard(page);
+        // Cancellation settles first, then pdf.js can free its shared measurement canvases.
+        queueMicrotask(() => pdfjs.TextLayer.cleanup());
+    });
     measure(); setupScroll(session);
     const outline = await doc.getOutline().catch(() => null);
     if (!live(session)) return;
@@ -2043,6 +2454,7 @@ async function openText(session, file) {
     }
     if (!live(session)) return;
     session.pane = pane; session.article = article;
+    hookSelection(session, document, article);
     pane.append(article); $('#r-body').append(pane);
     applyPreferences();
     const headings = [...article.querySelectorAll('h1,h2,h3')];
@@ -2095,9 +2507,11 @@ function syncPreferences() {
     $('#themes').style.setProperty('--selected', Object.keys(THEMES).indexOf(prefs.theme));
     $('#fonts').style.setProperty('--selected', fonts.indexOf(prefs.font));
     $('#flows').style.setProperty('--selected', prefs.flow === 'paginated' ? 0 : 1);
+    $('#columns').style.setProperty('--selected', prefs.columns === 1 ? 0 : 1);
     for (const node of $('#themes').children) node.setAttribute('aria-pressed', String(node.dataset.theme === prefs.theme));
     for (const node of $('#fonts').children) node.setAttribute('aria-pressed', String(node.dataset.font === prefs.font));
     for (const node of $('#flows').children) node.setAttribute('aria-pressed', String(node.dataset.flow === prefs.flow));
+    for (const node of $('#columns').children) node.setAttribute('aria-pressed', String(Number(node.dataset.columns) === prefs.columns));
     for (const key of ['size', 'lh', 'width']) $(`#${key}-value`).value = prefs[key];
     const limits = { size: [12, 32], lh: [1.2, 2], width: [1, 4] };
     for (const button of $('#prefs').querySelectorAll('[data-step]')) {
@@ -2106,6 +2520,8 @@ function syncPreferences() {
     }
     $('#justify').checked = prefs.justify;
     $('#flow-row').hidden = active?.record.kind !== 'foliate';
+    // Two pages side by side only exist in paginated flow.
+    $('#columns-row').hidden = active?.record.kind !== 'foliate' || prefs.flow !== 'paginated';
     $('#justify-row').hidden = active?.record.kind === 'pdf';
 }
 function applyPreferences(changed) {
@@ -2116,12 +2532,12 @@ function applyPreferences(changed) {
     reader.style.colorScheme = theme.dark ? 'dark' : 'light'; reader.dataset.dark = theme.dark;
     const renderer = active?.view?.renderer;
     if (renderer) {
-        if (!changed || ['flow', 'width'].includes(changed)) {
-            renderer.setAttribute('flow', prefs.flow); renderer.setAttribute('max-column-count', '2');
+        if (!changed || ['flow', 'width', 'columns'].includes(changed)) {
+            renderer.setAttribute('flow', prefs.flow); renderer.setAttribute('max-column-count', String(prefs.columns));
             renderer.setAttribute('max-inline-size', widthPx()); renderer.setAttribute('gap', '6%'); renderer.setAttribute('margin', '56px');
             renderer.setAttribute('animated', '');
         }
-        if (!changed || !['flow', 'width'].includes(changed)) {
+        if (!changed || !['flow', 'width', 'columns'].includes(changed)) {
             if (renderer.setStyles) renderer.setStyles(bookCSS());
             if (changed === 'justify' && !active.view.isFixedLayout) for (const { doc } of renderer.getContents()) applyJustify(doc);
             else for (const { doc } of renderer.getContents()) styleFixedDocument(doc);
@@ -2133,8 +2549,7 @@ function applyPreferences(changed) {
     }
     if (changed === 'width' && active?.refreshPDF) {
         clearTimeout(active.resizeTimer);
-        const session = active;
-        session.resizeTimer = setTimeout(() => { if (live(session)) session.refreshPDF(); }, 150);
+        active.refreshPDF();
     }
     syncPreferences(); applyMode();
 }
@@ -2143,6 +2558,7 @@ $('#prefs').addEventListener('click', e => {
     if (!button) return;
     let changed;
     for (const key of ['theme', 'font', 'flow']) if (button.dataset[key]) { prefs[key] = button.dataset[key]; changed = key; }
+    if (button.dataset.columns) { prefs.columns = Number(button.dataset.columns); changed = 'columns'; }
     if (button.dataset.step) {
         const [key, delta] = button.dataset.step.split(':');
         const [min, max] = { size: [12, 32], lh: [1.2, 2], width: [1, 4] }[key];
@@ -2168,6 +2584,11 @@ async function cloudChange(id, merge) {
             request.onsuccess = () => {
                 try {
                     changed = merge(request.result);
+                    // Keep a local path marker so a cloud tombstone cannot make
+                    // a removed folder book return on this device's next scan.
+                    if (changed === null && request.result?.source?.kind === 'fs') {
+                        changed = { ...request.result, hidden: true, synced: request.result.updated };
+                    }
                     if (changed === null) { store.delete(id); transaction.objectStore('files').delete(id); }
                     else if (changed !== undefined) store.put(changed);
                 } catch (error) { transaction.abort(); reject(error); }
@@ -2231,8 +2652,6 @@ async function setupCloud() {
     cloud = createCloud({
         all: () => all('books'), get: id => get('books', id), change: cloudChange,
         file: async id => (await get('files', id))?.file,
-        // A second device syncs its own copy of a book; merge before pushing so both sides settle.
-        dedupe: () => dedupeLibrary(),
         async saveFile(id, file, valid) {
             await tx('files', 'readwrite', store => { if (valid()) return store.put({ id, file }); });
             if (valid()) { localFiles.add(id); renderLibrary(); }
@@ -2268,6 +2687,7 @@ async function setupCloud() {
         },
     });
     if (!await cloud.start()) { cloud = null; return; }
+    for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
     const note = $('.device-note');
     note.querySelector(':scope > .icon').remove(); note.querySelector(':scope > span').remove();
     note.prepend(row);
@@ -2288,16 +2708,11 @@ applyLanguage(); syncPreferences();
 try {
     books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
     roots = await all('roots');
-    for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
     await flushStash();
     setImporting(false); renderLibrary();
 }
 catch (error) { report(() => t('libraryFailed'), error); }
-// A merge before the account is known would delete a book locally without telling the cloud.
-setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); }).then(async () => {
-    const merged = await dedupeLibrary();
-    if (merged) toast(() => t(merged === 1 ? 'duplicatesMergedOne' : 'duplicatesMergedOther', { count: merged }));
-}).catch(error => console.warn('Duplicate merge unavailable', error));
+setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
 window.__leeslamp = { linkFolder, rescan };
 async function registerServiceWorker() {
     if (!navigator.serviceWorker) return;

@@ -1,82 +1,90 @@
-// A book lands in the library twice whenever the same file arrives twice: importing it again,
-// linking one folder on two devices (each device gives a folder its own root id, so every path
-// gets a second book id), linking a folder inside an already linked folder, or importing a file
-// that the cloud already holds. Book ids are random, so only the file itself identifies a book:
-// name, extension and size travel with every record and cross the account boundary unchanged.
-const text = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
-const number = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
-export function bookKey(record) {
-    const name = text(record?.name), ext = text(record?.ext);
-    if (!name || !Number.isFinite(record?.size) || record.size <= 0) return '';
-    return `${ext}|${record.size}|${name}`;
+// Shared identity rules. Empty identities never match; size is always exact.
+export const normalizeIdentity = value => typeof value === 'string'
+    ? value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ') : '';
+export const normalizeName = value => normalizeIdentity(value).replace(/\.[^.]+$/, '').trim();
+const eligible = record => !record.hidden && Number.isFinite(record.size) && record.size > 0;
+const keys = (record, metadataOnly) => {
+    if (!eligible(record)) return [];
+    const name = normalizeName(record.name), title = normalizeIdentity(record.title);
+    // An epub and a pdf of one title are two books, never a duplicate pair.
+    const scope = `${normalizeIdentity(record.ext)}:${record.size}`;
+    // Older records do not retain title provenance. A filename fallback is not
+    // evidence of a metadata title, even when metadata parsing succeeded.
+    const metadataTitle = record.metadataReady === true && title && title !== name;
+    // Across formats the bytes differ, so only a metadata title plus a real author is evidence.
+    const author = normalizeIdentity(record.author);
+    return [name && `n:${scope}:${name}`,
+        title && (!metadataOnly || metadataTitle) && `t:${scope}:${title}`,
+        !metadataOnly && metadataTitle && author && `x:${title}|${author}`].filter(Boolean);
+};
+export function createImportIndex(records) {
+    const identities = new Set();
+    const add = record => { for (const key of keys(record, true)) identities.add(key); };
+    records.forEach(add);
+    return { add, has: record => keys(record, true).some(key => identities.has(key)) };
 }
-// The copy that stays is the one that stays readable: the open book first, then a cloud copy
-// (its bytes serve every device), then bytes or a linked folder on this device, then the oldest.
-const rank = (record, settings) => [record.id === settings.activeId,
-    record.cloudFile === true || record.fileSynced === true,
-    settings.hasFile(record.id) || settings.reachable(record)].map(Number);
-function better(candidate, current, settings) {
-    const left = rank(candidate, settings), right = rank(current, settings);
-    for (const [index, value] of left.entries()) if (value !== right[index]) return value > right[index];
-    const added = number(candidate.added, Infinity) - number(current.added, Infinity);
-    return added ? added < 0 : String(candidate.id) < String(current.id);
-}
-function changesFor(keeper, group) {
-    const changes = {};
-    const set = (key, value) => { if (value !== undefined && value !== keeper[key]) changes[key] = value; };
-    // Reading progress belongs to the copy read last; an untouched copy never overwrites it.
-    const read = group.reduce((best, record) => number(record.opened) > number(best.opened)
-        || (number(record.opened) === number(best.opened) && number(record.fraction) > number(best.fraction)) ? record : best);
-    if (read !== keeper) {
-        set('opened', read.opened ?? null);
-        set('fraction', number(read.fraction));
-        set('loc', read.loc ?? null);
-    }
-    if (group.some(record => record.finished === true)) set('finished', true);
-    const added = Math.min(...group.map(record => number(record.added, Infinity)));
-    if (Number.isFinite(added)) set('added', added);
-    // A category chosen by hand outranks an automatic one, and any category outranks none.
-    const chosen = group.find(record => record.categoryManual === true && record.category)
-        || group.find(record => record.category);
-    if (chosen) set('category', chosen.category);
-    if (group.some(record => record.categoryManual === true)) set('categoryManual', true);
-    if (keeper.metadataReady !== true) {
-        const parsed = group.find(record => record.metadataReady === true);
-        if (parsed) {
-            set('title', parsed.title); set('author', parsed.author); set('metadataReady', true);
-            if (Array.isArray(parsed.subjects)) set('subjects', parsed.subjects);
-        }
-    }
-    if (!keeper.cover) {
-        const covered = group.find(record => record.cover);
-        if (covered) set('cover', covered.cover);
-    }
-    return changes;
-}
-// Hidden books stay hidden: they were put away on purpose and must not return through a merge.
-export function planDedupe(records, options = {}) {
-    const settings = { activeId: null, hasFile: () => false, reachable: () => false, ...options };
-    const groups = new Map();
+
+export function planDedupe(records, roots) {
+    const rootIds = new Set(roots.map(root => typeof root === 'string' ? root : root.id));
+    const parent = [], rank = [], entries = [], identities = new Map();
+    const find = index => {
+        while (parent[index] !== index) { parent[index] = parent[parent[index]]; index = parent[index]; }
+        return index;
+    };
+    const join = (a, b) => {
+        a = find(a); b = find(b);
+        if (a === b) return;
+        if (rank[a] < rank[b]) [a, b] = [b, a];
+        parent[b] = a;
+        if (rank[a] === rank[b]) rank[a]++;
+    };
     for (const record of records) {
-        if (!record || record.hidden === true) continue;
-        const key = bookKey(record);
-        if (!key) continue;
-        if (groups.has(key)) groups.get(key).push(record); else groups.set(key, [record]);
-    }
-    const updates = [], removals = [], transfers = [];
-    for (const group of groups.values()) {
-        if (group.length < 2) continue;
-        const keeper = group.reduce((best, record) => better(record, best, settings) ? record : best);
-        const changes = changesFor(keeper, group);
-        if (Object.keys(changes).length) updates.push({ record: keeper, changes });
-        let readable = settings.hasFile(keeper.id) || settings.reachable(keeper);
-        for (const record of group) {
-            if (record === keeper) continue;
-            if (!readable && settings.hasFile(record.id)) { transfers.push({ from: record.id, to: keeper.id }); readable = true; }
-            // A linked folder offers the same path at every scan, so its copy is hidden, never deleted.
-            if (record.source?.kind === 'fs') updates.push({ record, changes: { hidden: true } });
-            else removals.push(record);
+        const matches = keys(record, false);
+        if (!matches.length) continue;
+        const index = entries.length;
+        entries.push(record); parent.push(index); rank.push(0);
+        for (const key of matches) {
+            if (identities.has(key)) join(index, identities.get(key));
+            else identities.set(key, index);
         }
     }
-    return { updates, removals, transfers };
+    const buckets = new Map();
+    entries.forEach((record, index) => {
+        const key = find(index);
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(record);
+    });
+    const reflowable = record => normalizeIdentity(record.ext) === 'pdf' ? 0 : 1;
+    const priority = record => record.source?.kind === 'fs' && rootIds.has(record.source.root) ? 2 : record.cloudFile === true ? 1 : 0;
+    const updated = record => Number.isFinite(record.updated) ? record.updated : 0;
+    const fraction = record => Number.isFinite(record.fraction) ? record.fraction : 0;
+    const better = (a, b) => reflowable(a) > reflowable(b) || reflowable(a) === reflowable(b)
+        && (priority(a) > priority(b) || priority(a) === priority(b)
+        && (updated(a) > updated(b) || updated(a) === updated(b) && a.id < b.id));
+    const groups = [];
+    let total = 0;
+    for (const group of buckets.values()) {
+        if (group.length < 2) continue;
+        const original = group.reduce((a, b) => better(b, a) ? b : a);
+        const keep = { ...original }, drop = group.filter(record => record !== original).map(record => ({ ...record, keepFile: false }));
+        const furthest = group.reduce((a, b) => fraction(b) > fraction(a) ? b : a, original);
+        const manual = original.categoryManual ? original : group.find(record => record.categoryManual && record.category);
+        const category = manual || group.find(record => record.category);
+        const opened = group.map(record => record.opened).filter(Number.isFinite);
+        const merged = { fraction: fraction(furthest), loc: furthest.loc ?? null,
+            opened: opened.length ? Math.max(...opened) : null,
+            finished: group.some(record => record.finished === true && fraction(record) === fraction(furthest)),
+            category: category?.category || '', categoryManual: !!manual,
+            cover: original.cover || group.find(record => record.cover)?.cover || null };
+        if (keep.cloudFile !== true) {
+            const donor = drop.find(record => record.cloudFile === true
+                && normalizeIdentity(record.ext) === normalizeIdentity(keep.ext));
+            if (donor) {
+                Object.assign(keep, { driveFile: donor.driveFile, cloudFile: true, fileSynced: true });
+                donor.keepFile = true;
+            }
+        }
+        groups.push({ keep, drop, merged }); total += drop.length;
+    }
+    return { groups, total };
 }

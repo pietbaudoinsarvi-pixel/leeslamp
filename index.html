@@ -121,6 +121,7 @@
     #clear-recent { padding:4px 0; font-size:11px; color:var(--mute); text-decoration:underline; text-underline-offset:3px; border-radius:0; }
     #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(152px,1fr)); gap:36px 28px; }
     /* Skip layout and paint for cards outside the viewport; the size hint keeps the scrollbar honest. */
+    .card img { -webkit-user-drag:none; user-select:none; }
     .card { min-width:0; position:relative; content-visibility:auto; contain-intrinsic-size:auto 280px; }
     .card.arriving { animation:cover-in 560ms var(--ease) both; animation-delay:var(--delay,0ms); }
     .book-open { display:block; padding:0; width:100%; text-align:left; border-radius:0; }
@@ -201,6 +202,15 @@
     #pdf,#text { position:absolute; inset:0; overflow:auto; padding:64px 0; overscroll-behavior:contain; outline-offset:-3px; overflow-anchor:none; }
     .page { position:relative; width:min(calc(100% - 48px),var(--read-width)); margin:0 auto 16px; background:var(--paper); box-shadow:var(--paper-shadow); content-visibility:auto; }
     .page canvas { display:block; position:absolute; inset:0; width:100%; height:100%; }
+    #pdf .textLayer { position:absolute; inset:0; overflow:clip; line-height:1; text-align:initial; text-size-adjust:none; -webkit-text-size-adjust:none; forced-color-adjust:none; transform-origin:0 0; user-select:text; -webkit-user-select:text; }
+    #pdf .textLayer :is(span,br) { position:absolute; color:transparent; white-space:pre; cursor:text; transform-origin:0 0; user-select:text; -webkit-user-select:text; }
+    #pdf .textLayer .markedContent { top:0; height:0; }
+    #pdf .textLayer ::selection { background:color-mix(in srgb,var(--accent) 35%,transparent); color:transparent; }
+    #pdf .textLayer br::selection { background:transparent; }
+    #pdf .textLayer[data-main-rotation="90"] { transform:rotate(90deg) translateY(-100%); }
+    #pdf .textLayer[data-main-rotation="180"] { transform:rotate(180deg) translate(-100%,-100%); }
+    #pdf .textLayer[data-main-rotation="270"] { transform:rotate(270deg) translateX(-100%); }
+    .hiddenCanvasElement { position:absolute; top:0; left:0; width:0; height:0; visibility:hidden; pointer-events:none; }
     #reader[data-dark="true"] .page { background:var(--rbg); }
     #reader[data-dark="true"] .page canvas { filter:invert(.88) hue-rotate(180deg); }
     #text article { box-sizing:border-box; max-width:var(--read-width); margin:0 auto; padding:0 32px; overflow-wrap:anywhere; }
@@ -211,6 +221,21 @@
     #text article p,#text article li { hyphens:auto; }
     #text article h1,#text article h2,#text article h3 { letter-spacing:-.025em; line-height:1.3; scroll-margin-top:72px; }
     .popover { position:absolute; z-index:5; background:var(--rbg); color:var(--rfg); border:1px solid var(--rline); border-radius:2px; box-shadow:var(--shadow); animation:panel-in 500ms var(--ease) both; }
+    #lookup-button { position:fixed; z-index:6; min-height:44px; padding:11px 20px; font-size:15px; background:var(--rbg); color:var(--accent); border:1px solid var(--rline); border-radius:2px; box-shadow:var(--shadow); transition:transform 150ms var(--ease),opacity 150ms var(--ease); }
+    #lookup-panel { position:fixed; top:max(64px,calc(env(safe-area-inset-top) + 56px)); right:max(16px,env(safe-area-inset-right)); width:min(384px,calc(100% - 32px - env(safe-area-inset-left) - env(safe-area-inset-right))); max-height:calc(100dvh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow:auto; padding:16px; overflow-wrap:anywhere; }
+    #lookup-panel .panel-heading { margin-bottom:16px; }
+    #lookup-panel button,#ask-dialog button { min-height:36px; min-width:36px; }
+    #lookup-panel p { margin:8px 0; line-height:1.5; }
+    #lookup-panel a,#ask-dialog a { color:var(--accent); }
+    .lookup-actions { margin-top:16px; padding-top:16px; border-top:1px solid var(--rline); display:grid; gap:8px; }
+    #lookup-panel input,#ask-dialog input,#ask-dialog select { width:100%; min-height:36px; border:1px solid var(--rline,var(--line)); border-radius:2px; background:var(--rbg,var(--bg)); color:inherit; padding:8px; }
+    #ask-dialog { width:min(448px,calc(100% - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:1px solid var(--rline); border-radius:2px; background:var(--rbg); color:var(--rfg); box-shadow:var(--shadow); }
+    #ask-dialog::backdrop { background:#18251c66; }
+    #ask-dialog label { display:block; margin:16px 0 8px; }
+    #ask-price,#ask-stored-key { font-size:12px; color:var(--mute); }
+    #ask-status { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #ask-answer { white-space:pre-wrap; }
+    #lookup-button { --safe-top:env(safe-area-inset-top,0px); --safe-right:env(safe-area-inset-right,0px); --safe-bottom:env(safe-area-inset-bottom,0px); --safe-left:env(safe-area-inset-left,0px); }
     .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--rline); padding-bottom:16px; margin-bottom:20px; }
     .panel-heading h2 { font-size:16px; letter-spacing:-.035em; font-weight:500; margin:0; }
     .panel-close { padding:4px; width:28px; min-height:28px; }
@@ -236,8 +261,8 @@
     .stepper output { width:44px; text-align:center; font-size:15px; font-variant-numeric:tabular-nums; }
     .stepper button { font-size:18px; width:32px; padding:4px; }
     #flow-row { margin-top:20px; }
-    #flows { --options:2; }
-    #flows button { font-size:12px; }
+    #flows,#columns { --options:2; }
+    #flows button,#columns button { font-size:12px; }
     #justify-row { display:flex; align-items:center; justify-content:space-between; margin-top:20px; font-size:12px; }
     #justify { appearance:none; width:18px; height:18px; margin:0; border:1px solid var(--rmuted); border-radius:0; display:grid; place-content:center; cursor:pointer; }
     #justify::before { content:''; width:8px; height:8px; background:var(--rfg); transform:scale(0); transition:transform 150ms var(--ease); }
@@ -252,7 +277,8 @@
     #toc-list [aria-expanded="false"] + ol { display:none; }
     #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
     #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(560px,calc(100% - 32px)); max-height:60vh; overflow:auto; overflow-wrap:anywhere; background:var(--fg); color:var(--bg); border-left:3px solid var(--accent); padding:14px 20px; font-size:12px; border-radius:2px; box-shadow:var(--shadow); white-space:pre-line; animation:toast-in 500ms var(--ease); }
-    #loading { position:absolute; inset:0; display:grid; place-content:center; color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
+    #loading { position:absolute; inset:0; display:grid; place-content:center; }
+    #loading,.lookup-loading { color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
     #loading.downloading { justify-items:center; gap:16px; text-align:center; }
     .download-vessel { width:80px; height:112px; color:var(--accent); }
     .download-level { transform:translateY(calc((1 - var(--download-fraction, .45)) * 100px)); transition:transform 300ms ease-out; }
@@ -276,6 +302,7 @@
       .brand svg { width:22px; height:28px; }
       .sidebar-heading,.device-note > span,.device-note > .icon { display:none; }
       .sidebar-bottom { display:contents; }
+      #dedupe { display:none; }
       .sidebar-bottom > button { order:1; width:100%; min-width:0; height:40px; padding:0 12px; font-size:12px; text-align:center; }
       #find-books:not([hidden]) ~ #folder-import { grid-column:1/-1; }
       .sidebar-bottom .import { justify-content:center; gap:8px; border:1px solid var(--fg); }
@@ -349,10 +376,11 @@
       <div class="brand"><svg class="icon" aria-hidden="true"><use href="#i-lamp"/></svg>Leeslamp</div>
       <div class="sidebar-heading eyebrow" data-i18n="library">Bibliotheek</div>
       <nav id="filters" aria-label="Boekenfilter" data-i18n="" data-i18n-aria-label="filters">
-        <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+        <div class="filters-heading"><span id="filters-heading" class="eyebrow" data-i18n="library">Bibliotheek</span><button id="dedupe-mobile" class="folder-button" type="button" hidden data-i18n="dedupeBooks">Dubbele boeken opruimen</button><button id="filters-close" class="panel-close" aria-label="Filters sluiten" data-i18n="" data-i18n-aria-label="closeFilters"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
         <div id="filter-list"></div>
       </nav>
       <div class="sidebar-bottom">
+        <button class="folder-button" id="dedupe" type="button" hidden data-i18n="dedupeBooks">Dubbele boeken opruimen</button>
         <button class="import" id="import-button"><span data-i18n="import">Importeren</span><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
         <button class="folder-button" id="find-books" hidden data-i18n="findBooks" aria-describedby="find-books-hint">Boeken zoeken</button>
         <p class="find-books-hint" id="find-books-hint" data-i18n="findBooksHint">Kies in de kiezer 'Alles selecteren' om je hele map toe te voegen.</p>
@@ -381,7 +409,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       </div>
     </main>
   </div>
-  <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx">
+  <input id="file-input" type="file" multiple hidden accept=".epub,.mobi,.azw,.azw3,.prc,.fb2,.fbz,.cbz,.pdf,.txt,.md,.markdown,.html,.htm,.docx,application/epub+zip,application/pdf,application/x-mobipocket-ebook,application/vnd.amazon.ebook,application/vnd.comicbook+zip,application/x-fictionbook+xml,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/html">
   <input id="folder-input" type="file" webkitdirectory multiple hidden>
   <dialog id="book-actions" aria-labelledby="book-actions-title">
     <form method="dialog">
@@ -421,6 +449,13 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <div class="dialog-actions"><button value="" data-i18n="cancel">Annuleren</button></div>
     </form>
   </dialog>
+  <dialog id="dedupe-dialog" class="cloud-dialog" aria-labelledby="dedupe-title" aria-describedby="dedupe-summary">
+    <form method="dialog">
+      <h2 id="dedupe-title" data-i18n="dedupeBooks">Dubbele boeken opruimen</h2>
+      <p id="dedupe-summary"></p>
+      <div class="dialog-actions"><button value="" autofocus data-i18n="cancel">Annuleren</button><button value="confirm" class="import" data-i18n="dedupeRun">Opruimen</button></div>
+    </form>
+  </dialog>
   <dialog id="cloud-switch-dialog" class="cloud-dialog" aria-labelledby="cloud-switch-title">
     <form method="dialog">
       <h2 id="cloud-switch-title" data-i18n="account">Account</h2>
@@ -430,6 +465,38 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
   </dialog>
   <section id="reader" hidden aria-label="Boeklezer" tabindex="-1" data-i18n="" data-i18n-aria-label="reader">
     <div id="r-body"></div>
+    <button id="lookup-button" hidden data-i18n="lookup" aria-controls="lookup-panel" aria-expanded="false">Opzoeken</button>
+    <aside id="lookup-panel" class="popover" hidden role="dialog" aria-labelledby="lookup-term" tabindex="-1">
+      <div class="panel-heading"><h2 id="lookup-term"></h2><button data-close-panel data-i18n="lookupClose">Paneel sluiten</button></div>
+      <div id="lookup-result" role="status" aria-live="polite"></div>
+      <form id="ask-form" class="lookup-actions">
+        <label for="ask-question" data-i18n="askQuestion">Je vraag</label>
+        <input id="ask-question" type="text" maxlength="1000" data-i18n="" data-i18n-placeholder="askDefault" placeholder="Leg deze passage uit.">
+        <button id="ask-explain" type="submit" data-i18n="askSetup">Uitleg instellen</button>
+        <button id="ask-settings" type="button" data-i18n="askSetup" hidden>Uitleg instellen</button>
+      </form>
+      <p id="ask-status" role="status"></p><p id="ask-answer" aria-live="polite"></p>
+      <div id="ask-sources"></div>
+    </aside>
+    <dialog id="ask-dialog" aria-labelledby="ask-title">
+      <form id="ask-settings-form">
+        <h2 id="ask-title" data-i18n="askSetup">Uitleg instellen</h2>
+        <p data-i18n="askDisclosure">Je gebruikt je eigen API-sleutel. De geselecteerde passage, boektitel, auteur, hoofdstuk en je vraag gaan naar de gekozen aanbieder.</p>
+        <label for="ask-provider" data-i18n="askProvider">Aanbieder</label><select id="ask-provider"></select>
+        <label for="ask-model" data-i18n="askModel">Model</label><select id="ask-model"></select>
+        <div id="ask-custom" hidden>
+          <label for="ask-custom-model" data-i18n="askModel">Model</label><input id="ask-custom-model" type="text">
+          <label for="ask-base-url" data-i18n="askBaseUrl">Basis-URL (HTTPS)</label><input id="ask-base-url" type="url" placeholder="https://">
+          <label for="ask-adapter" data-i18n="askAdapter">API-formaat</label><select id="ask-adapter"><option value="openai" data-i18n="askOpenai">OpenAI-compatibel</option><option value="anthropic" data-i18n="askAnthropic">Anthropic</option></select>
+        </div>
+        <p id="ask-price"></p>
+        <label for="ask-key" data-i18n="askKey">API-sleutel</label><input id="ask-key" type="password" autocomplete="off" spellcheck="false">
+        <p id="ask-stored-key"></p><button id="ask-remove" type="button" data-i18n="askRemove" hidden>Verwijderen</button>
+        <p><a id="ask-key-page" target="_blank" rel="noopener noreferrer" data-i18n="askKeyPage">Sleutel aanmaken bij aanbieder</a></p>
+        <p id="ask-settings-error" role="alert"></p>
+        <div class="dialog-actions"><button id="ask-cancel" type="button" data-i18n="cancel">Annuleren</button><button type="submit" data-i18n="save">Opslaan</button></div>
+      </form>
+    </dialog>
     <div id="top-bar" class="reader-bar"><button id="back" title="Terug naar bibliotheek" aria-label="Terug naar bibliotheek" data-i18n="" data-i18n-title="back" data-i18n-aria-label="back"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg><span data-i18n="library">Bibliotheek</span></button><div id="r-title"></div><div class="reader-actions"><button id="toc-button" hidden title="Inhoudsopgave" aria-label="Inhoudsopgave" aria-controls="toc" aria-expanded="false" data-i18n="" data-i18n-title="toc" data-i18n-aria-label="toc"><svg class="icon" aria-hidden="true"><use href="#i-toc"/></svg></button><button id="aa" title="Leesvoorkeuren" aria-label="Leesvoorkeuren" aria-controls="prefs" aria-expanded="false" data-i18n="" data-i18n-title="readingPrefs" data-i18n-aria-label="readingPrefs">Aa</button></div></div>
     <div id="bottom-bar" class="reader-bar"><button id="prev" title="Vorige pagina" aria-label="Vorige pagina" data-i18n="" data-i18n-title="prev" data-i18n-aria-label="prev"><svg class="icon" aria-hidden="true"><use href="#i-left"/></svg></button><div class="slider-wrap"><span class="slider-rail" aria-hidden="true"><span id="slider-fill"></span></span><input id="slider" aria-label="Leesvoortgang" type="range" min="0" max="1" step="any" value="0" list="ticks" data-i18n="" data-i18n-aria-label="readingProgress"><datalist id="ticks"></datalist></div><button id="next" title="Volgende pagina" aria-label="Volgende pagina" data-i18n="" data-i18n-title="next" data-i18n-aria-label="next"><svg class="icon" aria-hidden="true"><use href="#i-right"/></svg></button><span id="progress-label">0%</span></div>
     <aside id="toc" class="popover" hidden aria-label="Inhoudsopgave" data-i18n="" data-i18n-aria-label="toc"><div class="panel-heading"><h2 data-i18n="contents">Inhoud</h2><button class="panel-close" data-close-panel title="Inhoudsopgave sluiten" aria-label="Inhoudsopgave sluiten" data-i18n="" data-i18n-title="closeToc" data-i18n-aria-label="closeToc"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="toc-list"></div></aside>
@@ -441,6 +508,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
       <div class="stepper"><span data-i18n="lineHeight">Regelafstand</span><button data-step="lh:-0.1" title="Kleinere regelafstand" aria-label="Kleinere regelafstand" data-i18n="" data-i18n-title="lessLineHeight" data-i18n-aria-label="lessLineHeight">−</button><output id="lh-value" aria-label="Regelafstand" data-i18n="" data-i18n-aria-label="lineHeight">1.5</output><button data-step="lh:0.1" title="Grotere regelafstand" aria-label="Grotere regelafstand" data-i18n="" data-i18n-title="moreLineHeight" data-i18n-aria-label="moreLineHeight">+</button></div>
       <div class="stepper"><span data-i18n="width">Tekstbreedte</span><button data-step="width:-1" title="Bredere tekst" aria-label="Bredere tekst" data-i18n="" data-i18n-title="wider" data-i18n-aria-label="wider">−</button><output id="width-value" aria-label="Breedtestand" data-i18n="" data-i18n-aria-label="widthSetting">2</output><button data-step="width:1" title="Smallere tekst" aria-label="Smallere tekst" data-i18n="" data-i18n-title="narrower" data-i18n-aria-label="narrower">+</button></div>
       <div id="flow-row"><span class="pref-label" data-i18n="layout">Weergave</span><div id="flows" class="segments" role="group" aria-label="Pagina of scrollen" data-i18n="" data-i18n-aria-label="layoutLabel"><button data-flow="paginated" data-i18n="page">Pagina</button><button data-flow="scrolled" data-i18n="scroll">Scrollen</button></div></div>
+      <div id="columns-row"><span class="pref-label" data-i18n="columns">Pagina’s</span><div id="columns" class="segments" role="group" aria-label="Aantal pagina’s naast elkaar" data-i18n="" data-i18n-aria-label="columnsLabel"><button data-columns="1">1</button><button data-columns="2">2</button></div></div>
       <label id="justify-row"><span data-i18n="justify">Tekst uitvullen</span><input id="justify" type="checkbox" checked></label>
     </aside>
   </section>
