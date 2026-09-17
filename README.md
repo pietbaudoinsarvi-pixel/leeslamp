@@ -24,6 +24,7 @@ Leest ook PDF, TXT, MD/MARKDOWN, HTML/HTM en DOCX; CBR en DRM zijn niet onderste
 Start lokaal met `npx serve .` of een andere statische HTTP-server en open het getoonde adres.
 Deploy op Vercel als statische site, zonder buildopdracht; publiceer de repositoryroot.
 Los geïmporteerde boeken en voortgang blijven in IndexedDB op dit apparaat; voorkeuren staan in localStorage.
+Weigert de opslag tijdelijk — iOS verbreekt de databaseverbinding bij herladen of wegschakelen — dan probeert Leeslamp het op een verse verbinding opnieuw. Blijft het mislukken, dan wacht je leespositie in localStorage en wordt hij bij de volgende geslaagde opslag of bij de volgende start alsnog weggeschreven; de melding dat je leesvoortgang niet kon worden opgeslagen verschijnt alleen nog als ook dat niet lukt.
 Importeer via Importeren of slepen. Automatisch deelt elk boek afzonderlijk in; je kunt ook voor de hele selectie een categorie, Geen categorie of + Nieuwe categorie… kiezen.
 Categorieën met aantallen staan in de zijbalk; klik om te filteren. Via ⋯ op een boekkaart open je de boekacties, waaronder de categoriekeuze.
 Open een boek en gebruik Aa, de inhoudsopgave en de schuifbalk.

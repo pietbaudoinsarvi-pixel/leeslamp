@@ -406,13 +406,17 @@ const database = () => dbPromise ??= new Promise((resolve, reject) => {
     request.onblocked = () => toast(() => t('storageBlocked'));
 });
 const connectionLost = error => ['InvalidStateError', 'UnknownError'].includes(error?.name) || /Connection/i.test(error?.message || '');
-const recoverStorage = async operation => {
-    try { return await operation(); }
-    catch (error) {
-        if (!connectionLost(error)) throw error;
-        const stale = dbPromise; dbPromise = null;
-        try { (await stale)?.close(); } catch {}
-        return operation();
+// iOS drops the database connection when the app goes to the background or reloads; it comes
+// back a moment later, so a lost connection is retried on a fresh one instead of reported.
+const recoverStorage = async (operation, attempts = 3) => {
+    for (let attempt = 1; ; attempt++) {
+        try { return await operation(); }
+        catch (error) {
+            if (!connectionLost(error) || attempt >= attempts) throw error;
+            const stale = dbPromise; dbPromise = null;
+            try { (await stale)?.close(); } catch {}
+            await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        }
     }
 };
 const tx = (store, mode, fn) => recoverStorage(async () => {
@@ -516,6 +520,39 @@ const writeSetting = (key, value) => {
     try { localStorage.setItem(key, value); }
     catch (error) { report(() => t('prefsFailed'), error); }
 };
+// Last resort for reading progress: a position that IndexedDB refuses waits in localStorage and
+// is written on the next successful save or at the next start, so a page is never read twice.
+const progressKey = 'leeslamp.progress';
+const stashed = new Set();
+function readStash() {
+    try {
+        const value = JSON.parse(localStorage.getItem(progressKey) || '{}');
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    } catch { return {}; }
+}
+// The waiting position is the newest one this device knows, whatever the record in storage says.
+const progressOf = record => ({ fraction: record.fraction, loc: record.loc ?? null,
+    opened: record.opened ?? null, finished: record.finished === true, updated: Date.now() });
+function stashProgress(record) {
+    try {
+        const stash = readStash();
+        stash[record.id] = progressOf(record);
+        localStorage.setItem(progressKey, JSON.stringify(stash));
+        stashed.add(record.id);
+        return true;
+    } catch { return false; }
+}
+function clearStash(id) {
+    if (!stashed.has(id)) return;
+    stashed.delete(id);
+    try {
+        const stash = readStash();
+        if (!(id in stash)) return;
+        delete stash[id];
+        if (Object.keys(stash).length) localStorage.setItem(progressKey, JSON.stringify(stash));
+        else localStorage.removeItem(progressKey);
+    } catch { /* A position that cannot be cleared is written again, never lost. */ }
+}
 let toastTimer, toastMessage;
 function toast(message, duration = 4000) {
     clearTimeout(toastTimer);
@@ -1257,6 +1294,28 @@ async function mergeDuplicates() {
     renderLibrary();
     return removed.size + hidden;
 }
+// A position that waited in localStorage is written as soon as the library is known again.
+async function flushStash() {
+    const stash = readStash();
+    if (!Object.keys(stash).length) return;
+    const known = new Map(books.map(record => [record.id, record]));
+    const restore = [];
+    for (const [id, entry] of Object.entries(stash)) {
+        stashed.add(id);
+        const record = known.get(id);
+        if (!record) { clearStash(id); continue; }
+        if (Number.isFinite(entry?.fraction) && (entry.updated ?? 0) >= (record.updated ?? 0)) {
+            Object.assign(record, { fraction: entry.fraction, loc: entry.loc ?? null,
+                opened: entry.opened ?? null, finished: entry.finished === true });
+        }
+        restore.push(record);
+    }
+    if (!restore.length) return;
+    try {
+        await writeBookBatch(restore);
+        for (const record of restore) clearStash(record.id);
+    } catch (error) { console.warn('Stored progress waits for storage', error); }
+}
 const duplicateSummary = count => count
     ? ` · ${t(count === 1 ? 'duplicatesMergedOne' : 'duplicatesMergedOther', { count })}` : '';
 async function scanRoots(selected) {
@@ -1465,9 +1524,13 @@ function saveProgress(session, final = false) {
             store.put({ ...current, updated: session.record.updated, fraction: session.record.fraction, loc: session.record.loc, opened: session.record.opened, finished: session.record.finished });
         };
         return request;
-    })).then(() => cloud?.changed()).catch(error => {
+    })).then(() => { clearStash(session.record.id); cloud?.changed(); }).catch(error => {
         session.dirty = true;
-        report(() => t('progressFailed'), error);
+        console.warn('Progress write failed', error);
+        // Only a position that no store will hold is worth interrupting the reader for.
+        if (!stashProgress(session.record)) report(() => t('progressFailed'), error);
+        clearTimeout(session.retryTimer);
+        session.retryTimer = setTimeout(() => { if (live(session)) saveProgress(session, true); }, 2000);
     });
     return session.writes;
 }
@@ -1664,6 +1727,7 @@ async function closeBook() {
     active = null;
     session.controller.abort();
     clearTimeout(session.barTimer); clearTimeout(session.saveTimer); clearTimeout(session.resizeTimer);
+    clearTimeout(session.retryTimer);
     clearTimeout(session.wheelResetTimer); clearTimeout(session.wheelLockTimer);
     for (const id of session.frames) cancelAnimationFrame(id);
     for (const cleanup of session.cleanups) { try { cleanup(); } catch (error) { console.warn(error); } }
@@ -2225,6 +2289,7 @@ try {
     books = (await all('books')).map(book => ({ category: '', source: { kind: 'blob' }, ...book }));
     roots = await all('roots');
     for (const id of await tx('files', 'readonly', store => store.getAllKeys())) localFiles.add(id);
+    await flushStash();
     setImporting(false); renderLibrary();
 }
 catch (error) { report(() => t('libraryFailed'), error); }
