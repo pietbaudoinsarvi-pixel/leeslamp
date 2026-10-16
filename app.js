@@ -229,6 +229,15 @@ const STRINGS = {
         progressFailed: 'Je leesvoortgang kon niet worden opgeslagen.',
         locationFailed: 'Deze locatie kon niet worden geopend.',
         opening: 'Boek openen…',
+        busySeconds: '{label} {seconds} s',
+        busyPage: 'Bladzijde laden…',
+        busySaving: 'Opslaan…',
+        busyDeleting: 'Verwijderen…',
+        busyHiding: 'Verbergen…',
+        busyUploading: 'Uploaden naar je cloud…',
+        busySigningOut: 'Uitloggen…',
+        busySwitching: 'Account wisselen…',
+        busyUpdating: 'Nieuwe versie laden…',
         readAccess: 'Geen leestoegang',
         fileStorageMissing: 'Bestand ontbreekt in de opslag',
         turnFailed: 'Bladeren is mislukt.',
@@ -458,6 +467,15 @@ const STRINGS = {
         progressFailed: 'Could not save your reading progress.',
         locationFailed: 'Could not open this location.',
         opening: 'Opening book…',
+        busySeconds: '{label} {seconds} s',
+        busyPage: 'Loading page…',
+        busySaving: 'Saving…',
+        busyDeleting: 'Removing…',
+        busyHiding: 'Hiding…',
+        busyUploading: 'Uploading to your cloud…',
+        busySigningOut: 'Signing out…',
+        busySwitching: 'Switching account…',
+        busyUpdating: 'Loading new version…',
         readAccess: 'No read access',
         fileStorageMissing: 'File is missing from storage',
         turnFailed: 'Could not turn the page.',
@@ -666,6 +684,36 @@ function toast(message, duration = 4000) {
     $('#toast').hidden = false;
     if (duration) toastTimer = setTimeout(() => { $('#toast').hidden = true; toastMessage = null; }, duration);
 }
+// Every awaited action that can be slow: nothing under 300 ms, then a quiet line, after 3 s with seconds.
+// The line goes to `place` (a status element of its own) or else to #toast; settling or `signal` clears it.
+function busy(work, label, { button, place, signal, delay = 300 } = {}) {
+    const started = Date.now(), owner = {};
+    let shown = false, ticker;
+    const text = () => {
+        const seconds = Math.floor((Date.now() - started) / 1000);
+        return seconds >= 3 ? t('busySeconds', { label: t(label), seconds }) : t(label);
+    };
+    const show = () => {
+        if (place) {
+            if (shown && place.busyOwner !== owner && !place.hidden) return;
+            place.busyOwner = owner; place.textContent = text(); place.hidden = false;
+        } else if (!shown || toastMessage === text || $('#toast').hidden) toast(text, 0);
+        shown = true;
+        ticker ??= setInterval(show, 1000);
+    };
+    const timer = setTimeout(show, delay);
+    if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    const done = () => {
+        clearTimeout(timer); clearInterval(ticker);
+        if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+        if (place?.busyOwner === owner) { place.hidden = true; place.busyOwner = null; }
+        else if (!place && toastMessage === text) { $('#toast').hidden = true; toastMessage = null; }
+    };
+    signal?.addEventListener('abort', done, { once: true });
+    return Promise.resolve(work).finally(done);
+}
+// Page loads in the reader say so at the bottom of the reading column, never after the session ends.
+const pageLoad = (session, work, delay) => busy(work, 'busyPage', { place: $('#r-status'), signal: session.controller.signal, delay });
 const failureMessage = (message, error) => error?.name === 'QuotaExceededError' ? t('storageFull')
     : `${typeof message === 'function' ? message() : message}${error?.name && !connectionLost(error) ? ` (${error.name})` : ''}`;
 const report = (message, error) => { console.error(error); toast(() => failureMessage(message, error)); };
@@ -1009,12 +1057,14 @@ $('#grid').addEventListener('click', async e => {
         if (!action || importing) return;
         if (action === 'cloudUpload') {
             try {
-                const root = roots.find(root => root.id === record.source.root);
-                let file = (await get('files', record.id))?.file;
-                if (root && await readPermission(root.handle)) file = await resolveFile(root, record.source.path);
-                if (!file) throw new Error(t('fileStorageMissing'));
-                if (!file.size) throw new Error('empty file');
-                await cloud.upload(record, file);
+                await busy((async () => {
+                    const root = roots.find(root => root.id === record.source.root);
+                    let file = (await get('files', record.id))?.file;
+                    if (root && await readPermission(root.handle)) file = await resolveFile(root, record.source.path);
+                    if (!file) throw new Error(t('fileStorageMissing'));
+                    if (!file.size) throw new Error('empty file');
+                    await cloud.upload(record, file);
+                })(), 'busyUploading');
             } catch { toast(() => t('cloudFailed')); }
             return;
         }
@@ -1023,7 +1073,7 @@ $('#grid').addEventListener('click', async e => {
                 : action === 'markFinished' ? { finished: true }
                 : { finished: false, fraction: 0, loc: null, opened: null };
             try {
-                await put('books', { ...record, ...changes });
+                await busy(put('books', { ...record, ...changes }), 'busySaving');
                 Object.assign(record, changes); renderLibrary();
             } catch (error) { report(() => t('progressFailed'), error); }
             return;
@@ -1031,7 +1081,7 @@ $('#grid').addEventListener('click', async e => {
         const category = await chooseCategory(record.category, true);
         if (category === null) return;
         try {
-            await put('books', { ...record, category, categoryManual: true });
+            await busy(put('books', { ...record, category, categoryManual: true }), 'busySaving');
             record.category = category; record.categoryManual = true; renderLibrary();
         } catch (error) { report(() => t('categoryFailed'), error); }
         return;
@@ -1044,10 +1094,10 @@ $('#grid').addEventListener('click', async e => {
         if (!confirm(label)) return;
         try {
             if (record.source.kind === 'fs') {
-                await put('books', { ...record, hidden: true });
+                await busy(put('books', { ...record, hidden: true }), 'busyHiding');
                 record.hidden = true;
             } else {
-                await bookTransaction(record, null, true);
+                await busy(bookTransaction(record, null, true), 'busyDeleting');
                 books = books.filter(b => b.id !== record.id);
             }
             presentedBooks.delete(record.id);
@@ -1967,7 +2017,7 @@ function keydown(event) {
 function setTOC(session, items, select) {
     if (!live(session) || !items?.length) return;
     session.toc = createTOCView(items, href => {
-        Promise.resolve(select(href)).catch(error => report(() => t('locationFailed'), error));
+        pageLoad(session, select(href)).catch(error => report(() => t('locationFailed'), error));
         closePanels(); showBars();
     });
     // Mark only app-generated fallback labels; book headings remain original content.
@@ -2116,7 +2166,7 @@ async function closeBook() {
     $('#reader').hidden = true; $('#library').hidden = false;
     hideBars(false);
     updateTitle(); applyMode();
-    closing = saveProgress(session, true);
+    closing = busy(saveProgress(session, true), 'busySaving');
     await closing;
     closing = null;
     renderLibrary();
@@ -2159,7 +2209,7 @@ async function openFoliate(session, file) {
         clearTimeout(session.wheelLockTimer);
         session.wheelLock = true;
         session.wheelLockTimer = setTimeout(() => { if (live(session)) session.wheelLock = false; }, 380);
-        Promise.resolve(action).catch(error => report(() => t('turnFailed'), error));
+        pageLoad(session, action, turnDelay).catch(error => report(() => t('turnFailed'), error));
     };
     listen(session, $('#r-body'), 'wheel', handleWheel, { passive: true });
     listen(session, view, 'load', ({ detail: { doc } }) => {
@@ -2170,6 +2220,10 @@ async function openFoliate(session, file) {
         listen(session, doc, 'pointermove', showBars, { passive: true });
         listen(session, doc, 'wheel', handleWheel, { passive: true });
         listen(session, doc, 'click', contentClick);
+    });
+    listen(session, view, 'link', event => {
+        event.preventDefault();
+        pageLoad(session, view.goTo(event.detail.href)).catch(error => report(() => t('locationFailed'), error));
     });
     listen(session, view, 'relocate', ({ detail }) => {
         closeLookup();
@@ -2202,11 +2256,13 @@ async function openFoliate(session, file) {
         if (!live(session)) disposeView(view);
     }
 }
+// An animated page turn alone takes 300 ms (paginator.js:936); only a section load past that is waiting.
+const turnDelay = 450;
 function turn(direction) {
     closeLookup();
     const session = active;
     if (!session?.ready) return;
-    if (session.view) Promise.resolve(direction < 0 ? session.view.goLeft() : session.view.goRight())
+    if (session.view) pageLoad(session, direction < 0 ? session.view.goLeft() : session.view.goRight(), turnDelay)
         .catch(error => report(() => t('turnFailed'), error));
     else {
         const step = session.pages ? session.pages[session.pageIndex ?? 0].box.offsetHeight + 16 : session.pane.clientHeight * .85;
@@ -2225,7 +2281,7 @@ $('#slider').addEventListener('input', e => {
         const view = session.view;
         const action = view.isFixedLayout && !view.getSectionFractions().length
             ? view.goTo(Math.round(fraction * (view.book.sections.length - 1))) : view.goToFraction(fraction);
-        Promise.resolve(action).catch(error => report(() => t('locationFailed'), error));
+        pageLoad(session, action).catch(error => report(() => t('locationFailed'), error));
     } else session.pane.scrollTop = fraction * Math.max(0, session.pane.scrollHeight - session.pane.clientHeight);
 });
 
@@ -2659,7 +2715,7 @@ async function setupCloud() {
         async flush() { if (active?.dirty) await saveProgress(active, true); },
         // Never rebuild the grid behind the open filter sheet or an open book; render once it is visible again.
         async refresh() { if (filtersOpen || active) refreshPending = true; else renderLibrary(); },
-        async wipe() {
+        wipe: () => busy((async () => {
             while (importing) await new Promise(resolve => setTimeout(resolve, 100));
             setImporting(true);
             try {
@@ -2673,7 +2729,7 @@ async function setupCloud() {
                 });
                 books = []; roots = []; localFiles.clear(); presentedBooks.clear(); renderLibrary();
             } finally { setImporting(false); }
-        },
+        })(), 'busySwitching'),
     }, {
         account,
         status,
@@ -2701,7 +2757,7 @@ async function setupCloud() {
         cloud.signIn();
     });
     $('#cloud-sync').addEventListener('click', () => { $('#account-dialog').close(); void cloud.sync(true); });
-    $('#cloud-signout').addEventListener('click', () => { $('#account-dialog').close(); void cloud.signOut(); });
+    $('#cloud-signout').addEventListener('click', () => { $('#account-dialog').close(); void busy(cloud.signOut(), 'busySigningOut'); });
 }
 
 applyLanguage(); syncPreferences();
@@ -2737,6 +2793,8 @@ async function registerServiceWorker() {
         const worker = registration.waiting;
         if (!worker || refreshing) return;
         refreshing = true;
+        // Settles only by the reload on controllerchange, exactly as long as the wait lasts.
+        void busy(new Promise(() => {}), 'busyUpdating', { button: $('#update-refresh') });
         worker.postMessage({ type: 'SKIP_WAITING' });
     });
     $('#update-later').addEventListener('click', () => { prompt.hidden = true; });

@@ -277,6 +277,7 @@
     #toc-list [aria-expanded="false"] + ol { display:none; }
     #toc-list [aria-expanded="false"] > svg { transform:rotate(-90deg); }
     #toast { position:fixed; z-index:20; bottom:64px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(560px,calc(100% - 32px)); max-height:60vh; overflow:auto; overflow-wrap:anywhere; background:var(--fg); color:var(--bg); border-left:3px solid var(--accent); padding:14px 20px; font-size:12px; border-radius:2px; box-shadow:var(--shadow); white-space:pre-line; animation:toast-in 500ms var(--ease); }
+    #r-status { position:absolute; left:16px; right:16px; bottom:56px; z-index:3; margin:0; text-align:center; color:var(--rmuted); font-size:11px; letter-spacing:.04em; font-variant-numeric:tabular-nums; pointer-events:none; }
     #loading { position:absolute; inset:0; display:grid; place-content:center; }
     #loading,.lookup-loading { color:var(--rmuted); font-size:13px; letter-spacing:.04em; animation:view-in 500ms var(--ease); }
     #loading.downloading { justify-items:center; gap:16px; text-align:center; }
@@ -465,6 +466,7 @@ Probeer een andere titel, auteur of filter.</p><button id="reset-filters" data-i
   </dialog>
   <section id="reader" hidden aria-label="Boeklezer" tabindex="-1" data-i18n="" data-i18n-aria-label="reader">
     <div id="r-body"></div>
+    <p id="r-status" role="status" hidden></p>
     <button id="lookup-button" hidden data-i18n="lookup" aria-controls="lookup-panel" aria-expanded="false">Opzoeken</button>
     <aside id="lookup-panel" class="popover" hidden role="dialog" aria-labelledby="lookup-term" tabindex="-1">
       <div class="panel-heading"><h2 id="lookup-term"></h2><button data-close-panel data-i18n="lookupClose">Paneel sluiten</button></div>
