@@ -91,4 +91,14 @@ reset(); {
     await to(5000); assert.equal(placeEl.hidden, true);
 }
 
+// A later load that starts before the first line shows still owns the spot.
+reset(); {
+    const early = deferred(), late = deferred();
+    busy(early.promise, 'busyPage', { place: placeEl });
+    await to(100); busy(late.promise, 'busyPage', { place: placeEl });
+    await to(450); assert.equal(placeEl.hidden, false);
+    early.resolve(); await flush(); assert.equal(placeEl.hidden, false, 'the earlier load hid the later line');
+    late.resolve(); await flush(); assert.equal(placeEl.hidden, true);
+}
+
 console.log('PASS: busy() waits 300 ms, counts from 3 s, never covers or hides a later message, clears on settle and abort.');

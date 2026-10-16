@@ -700,7 +700,7 @@ function busy(work, label, { button, place, signal, delay = 300 } = {}) {
         return seconds >= 3 ? t('busySeconds', { label: t(label), seconds }) : t(label);
     };
     const show = () => {
-        if (owns() || (place ?? $('#toast')).hidden) {
+        if (owns() || (place ? place.hidden && !place.busyOwner : $('#toast').hidden)) {
             if (place) { place.busyOwner = owner; place.textContent = text(); place.hidden = false; }
             else { toast(text, 0); claim = toastSerial; }
             shown = true;
