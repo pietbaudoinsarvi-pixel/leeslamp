@@ -238,6 +238,7 @@ const STRINGS = {
         busySigningOut: 'Uitloggen…',
         busySwitching: 'Account wisselen…',
         busyUpdating: 'Nieuwe versie laden…',
+        updateFailed: 'Vernieuwen lukte niet. Probeer het opnieuw.',
         readAccess: 'Geen leestoegang',
         fileStorageMissing: 'Bestand ontbreekt in de opslag',
         turnFailed: 'Bladeren is mislukt.',
@@ -476,6 +477,7 @@ const STRINGS = {
         busySigningOut: 'Signing out…',
         busySwitching: 'Switching account…',
         busyUpdating: 'Loading new version…',
+        updateFailed: 'Could not refresh. Please try again.',
         readAccess: 'No read access',
         fileStorageMissing: 'File is missing from storage',
         turnFailed: 'Could not turn the page.',
@@ -676,38 +678,44 @@ function clearStash(id) {
         else localStorage.removeItem(progressKey);
     } catch { /* A position that cannot be cleared is written again, never lost. */ }
 }
-let toastTimer, toastMessage;
+let toastTimer, toastMessage, toastSerial = 0;
 function toast(message, duration = 4000) {
     clearTimeout(toastTimer);
+    toastSerial++;
     toastMessage = typeof message === 'function' ? message : () => message;
     $('#toast').textContent = toastMessage();
     $('#toast').hidden = false;
     if (duration) toastTimer = setTimeout(() => { $('#toast').hidden = true; toastMessage = null; }, duration);
 }
-// Every awaited action that can be slow: nothing under 300 ms, then a quiet line, after 3 s with seconds.
+// Every awaited action that can be slow: nothing under `delay` (300 ms), then a quiet line, from 3 s with seconds.
 // The line goes to `place` (a status element of its own) or else to #toast; settling or `signal` clears it.
+// Ownership counts from the tap: a message that arrives later is never covered and never hidden by this one;
+// once that message is gone (hidden), a still running action takes the spot again.
 function busy(work, label, { button, place, signal, delay = 300 } = {}) {
     const started = Date.now(), owner = {};
-    let shown = false, ticker;
+    let claim = place ? (place.busyOwner = owner) : toastSerial, shown = false, timer;
+    const owns = () => place ? place.busyOwner === owner : toastSerial === claim;
     const text = () => {
         const seconds = Math.floor((Date.now() - started) / 1000);
         return seconds >= 3 ? t('busySeconds', { label: t(label), seconds }) : t(label);
     };
     const show = () => {
-        if (place) {
-            if (shown && place.busyOwner !== owner && !place.hidden) return;
-            place.busyOwner = owner; place.textContent = text(); place.hidden = false;
-        } else if (!shown || toastMessage === text || $('#toast').hidden) toast(text, 0);
-        shown = true;
-        ticker ??= setInterval(show, 1000);
+        if (owns() || (place ?? $('#toast')).hidden) {
+            if (place) { place.busyOwner = owner; place.textContent = text(); place.hidden = false; }
+            else { toast(text, 0); claim = toastSerial; }
+            shown = true;
+        }
+        // Wake on each whole second after the tap, so the counter reads "3 s" at 3 s.
+        timer = setTimeout(show, 1000 - (Date.now() - started) % 1000);
     };
-    const timer = setTimeout(show, delay);
+    timer = setTimeout(show, delay);
     if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
     const done = () => {
-        clearTimeout(timer); clearInterval(ticker);
+        clearTimeout(timer);
         if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
-        if (place?.busyOwner === owner) { place.hidden = true; place.busyOwner = null; }
-        else if (!place && toastMessage === text) { $('#toast').hidden = true; toastMessage = null; }
+        if (!owns()) return;
+        if (place) { place.hidden = true; place.busyOwner = null; }
+        else if (shown) { $('#toast').hidden = true; toastMessage = null; }
     };
     signal?.addEventListener('abort', done, { once: true });
     return Promise.resolve(work).finally(done);
@@ -2209,7 +2217,8 @@ async function openFoliate(session, file) {
         clearTimeout(session.wheelLockTimer);
         session.wheelLock = true;
         session.wheelLockTimer = setTimeout(() => { if (live(session)) session.wheelLock = false; }, 380);
-        pageLoad(session, action, turnDelay).catch(error => report(() => t('turnFailed'), error));
+        pageLoad(session, action, turnDelay(session.view, useX ? horizontal !== (session.view.book.dir === 'rtl') : horizontal))
+            .catch(error => report(() => t('turnFailed'), error));
     };
     listen(session, $('#r-body'), 'wheel', handleWheel, { passive: true });
     listen(session, view, 'load', ({ detail: { doc } }) => {
@@ -2256,13 +2265,22 @@ async function openFoliate(session, file) {
         if (!live(session)) disposeView(view);
     }
 }
-// An animated page turn alone takes 300 ms (paginator.js:936); only a section load past that is waiting.
-const turnDelay = 450;
+// A paginator turn that slides first shows its change at once, and the slide takes 300 ms (paginator.js:936),
+// so the wait timer starts after it. Fixed layouts (fixed-layout.js:273) and turns past a section's last
+// page load first without any slide, so those get the plain 300 ms.
+function turnDelay(view, forward) {
+    const renderer = view.renderer;
+    if (view.isFixedLayout || !renderer?.hasAttribute('animated')) return 300;
+    const slides = renderer.scrolled ? (forward ? renderer.viewSize - renderer.end > 2 : renderer.start > 0)
+        : !(forward ? renderer.atEnd : renderer.atStart);
+    return slides ? 600 : 300;
+}
 function turn(direction) {
     closeLookup();
     const session = active;
     if (!session?.ready) return;
-    if (session.view) pageLoad(session, direction < 0 ? session.view.goLeft() : session.view.goRight(), turnDelay)
+    if (session.view) pageLoad(session, direction < 0 ? session.view.goLeft() : session.view.goRight(),
+        turnDelay(session.view, (direction > 0) !== (session.view.book.dir === 'rtl')))
         .catch(error => report(() => t('turnFailed'), error));
     else {
         const step = session.pages ? session.pages[session.pageIndex ?? 0].box.offsetHeight + 16 : session.pane.clientHeight * .85;
@@ -2793,8 +2811,9 @@ async function registerServiceWorker() {
         const worker = registration.waiting;
         if (!worker || refreshing) return;
         refreshing = true;
-        // Settles only by the reload on controllerchange, exactly as long as the wait lasts.
-        void busy(new Promise(() => {}), 'busyUpdating', { button: $('#update-refresh') });
+        // The reload on controllerchange normally ends this wait; without it the button comes back after 10 s.
+        void busy(new Promise(resolve => setTimeout(resolve, 10000)), 'busyUpdating', { button: $('#update-refresh') })
+            .then(() => { if (reloading) return; refreshing = false; toast(() => t('updateFailed')); });
         worker.postMessage({ type: 'SKIP_WAITING' });
     });
     $('#update-later').addEventListener('click', () => { prompt.hidden = true; });
