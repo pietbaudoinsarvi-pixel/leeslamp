@@ -7,6 +7,18 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/epub+zip": [".epub"],
+        "application/pdf": [".pdf"]
+      },
+      "icons": [{ "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }],
+      "launch_type": "single-client"
+    }
+  ],
   "theme_color": "#f3f3ef",
   "background_color": "#f3f3ef",
   "icons": [

@@ -246,6 +246,7 @@ const STRINGS = {
         readText: 'Tekst lezen',
         untitled: 'Zonder titel',
         libraryFailed: 'De bibliotheek kon niet worden geladen. Controleer of browseropslag is toegestaan.',
+        launchFailed: 'Het bestand van je bureaublad kon niet worden geopend.',
     },
     en: {
         lookup: 'Look up',
@@ -485,6 +486,7 @@ const STRINGS = {
         readText: 'Read text',
         untitled: 'Untitled',
         libraryFailed: 'Could not load the library. Check that browser storage is allowed.',
+        launchFailed: 'Could not open the file from your desktop.',
     },
 };
 
@@ -2787,6 +2789,25 @@ try {
 }
 catch (error) { report(() => t('libraryFailed'), error); }
 setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
+// Opened from the desktop ("Open with Leeslamp"): add the book if it is new, then open it.
+async function openLaunchedFiles(files) {
+    const known = file => {
+        const candidate = newRecord(file, '', { kind: 'blob' });
+        return books.find(record => createImportIndex([record]).has(candidate));
+    };
+    const fresh = files.filter(file => !known(file));
+    if (fresh.length) await importFiles(fresh, () => AUTO_CATEGORY);
+    const record = known(files[0]);
+    if (!record) return;
+    if (active) await closeBook();
+    await openBook(record);
+}
+window.launchQueue?.setConsumer(async params => {
+    try {
+        const files = await Promise.all((params.files ?? []).map(handle => handle.getFile()));
+        if (files.length) await openLaunchedFiles(files);
+    } catch (error) { report(() => t('launchFailed'), error); }
+});
 window.__leeslamp = { linkFolder, rescan };
 async function registerServiceWorker() {
     if (!navigator.serviceWorker) return;
