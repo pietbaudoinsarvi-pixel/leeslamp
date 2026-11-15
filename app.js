@@ -2789,7 +2789,7 @@ try {
 }
 catch (error) { report(() => t('libraryFailed'), error); }
 setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
-// Opened from the desktop ("Open with Leeslamp"): add the book if it is new, then open it.
+// Opened from the desktop ("Open with Leeslamp"): add new books; one book opens, a group stays in the library.
 async function openLaunchedFiles(files) {
     const known = file => {
         const candidate = newRecord(file, '', { kind: 'blob' });
@@ -2797,10 +2797,9 @@ async function openLaunchedFiles(files) {
     };
     const fresh = files.filter(file => !known(file));
     if (fresh.length) await importFiles(fresh, () => AUTO_CATEGORY);
-    const record = known(files[0]);
-    if (!record) return;
+    const record = files.length === 1 && known(files[0]);
     if (active) await closeBook();
-    await openBook(record);
+    if (record) await openBook(record);
 }
 window.launchQueue?.setConsumer(async params => {
     try {
