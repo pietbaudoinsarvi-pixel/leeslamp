@@ -103,17 +103,36 @@
     #empty p,#no-results p { white-space:pre-line; }
     #mode { margin-left:0; padding:6px; min-height:32px; }
     #mode .icon { width:18px; height:18px; }
-    main { flex:1; min-width:0; overflow:auto; scrollbar-gutter:stable; }
-    .library-content { max-width:2200px; margin:auto; padding:40px clamp(24px,3.4vw,80px) 56px; }
-    .library-header { display:flex; flex-wrap:wrap; align-items:flex-end; gap:24px; padding-bottom:28px; border-bottom:1px solid var(--line); }
+    main { flex:1; min-width:0; overflow:auto; scrollbar-gutter:stable; scroll-padding-top:144px; }
+    .library-content { max-width:2200px; margin:auto; padding:0 clamp(24px,3.4vw,80px) 56px; }
+    /* The header stays at the top while the grid scrolls; its padding folds to 16 px once it sticks. */
+    .library-header { position:sticky; top:-24px; z-index:4; display:flex; flex-wrap:wrap; align-items:flex-end; gap:24px; padding:40px 0 24px; border-bottom:1px solid var(--line); background:var(--bg); }
+    /* Covers the sub-pixel seam at the gutter so no cover edge shows beside the stuck header. */
+    .library-header::before { content:''; position:absolute; inset:0 -16px; z-index:-1; background:var(--bg); }
     .heading { flex:1; min-width:180px; }
     .heading .eyebrow { display:block; margin-bottom:12px; }
     .heading h1 { font-size:clamp(28px,2.4vw,38px); line-height:1.15; font-weight:450; letter-spacing:-.055em; margin:0; }
-    .library-tools { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
-    .search-field { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); }
-    .search-field .icon { width:16px; height:16px; color:var(--mute); }
-    #search { width:clamp(120px,12vw,200px); min-width:0; background:none; border:0; padding:8px 0; border-radius:0; font-size:12px; }
+    /* Search and sort share one flat, hairline-bounded field; no native bevels or fills. */
+    .library-tools { display:flex; align-items:stretch; height:40px; border:1px solid var(--line); border-radius:2px; background:var(--card); transition:border-color 150ms var(--ease),box-shadow 150ms var(--ease); }
+    .library-tools:hover { border-color:color-mix(in srgb,var(--mute) 45%,var(--line)); }
+    .library-tools:has(#search:focus) { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+    .search-field { display:flex; flex:1; align-items:center; gap:8px; min-width:0; padding:0 8px 0 12px; cursor:text; }
+    .search-field .icon { width:16px; height:16px; color:var(--mute); transition:color 150ms var(--ease); }
+    .library-tools:has(#search:focus) .search-field .icon { color:var(--accent); }
+    #search { -webkit-appearance:none; appearance:none; flex:1; width:clamp(152px,14vw,248px); min-width:0; height:100%; background:none; border:0; padding:0; border-radius:0; font-size:13px; outline:none; }
     #search::placeholder { color:var(--mute); opacity:1; }
+    #search::-webkit-search-decoration { -webkit-appearance:none; }
+    #search::-webkit-search-cancel-button { -webkit-appearance:none; appearance:none; width:16px; height:16px; margin:0; background:var(--mute); cursor:pointer;
+      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 4 8 8M12 4l-8 8' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E") center/12px no-repeat;
+      mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 4 8 8M12 4l-8 8' stroke='%23000' stroke-width='1.5'/%3E%3C/svg%3E") center/12px no-repeat; }
+    #search::-webkit-search-cancel-button:hover { background:var(--accent); }
+    .sort-field { position:relative; display:flex; align-items:center; border-left:1px solid var(--line); }
+    .sort-field:has(#sort[hidden]) { display:none; }
+    .sort-field .icon { position:absolute; right:10px; width:14px; height:14px; color:var(--mute); pointer-events:none; }
+    #sort { -webkit-appearance:none; appearance:none; height:100%; border:0; border-radius:0; background:transparent; padding:0 32px 0 12px; color:var(--mute); font-size:12px; transition:color 150ms var(--ease); }
+    #sort:hover,#sort:focus-visible { color:var(--fg); }
+    #sort:focus-visible { outline-offset:-2px; }
+    #sort option { background:var(--card); color:var(--fg); }
     select { max-width:100%; border:0; border-bottom:1px solid var(--line); background:var(--bg); padding:8px 4px; border-radius:0; font-size:12px; cursor:pointer; }
     .library-meta { display:flex; align-items:center; justify-content:space-between; margin:20px 0 28px; color:var(--mute); font-size:11px; font-variant-numeric:tabular-nums; }
     .library-meta > span:last-child { letter-spacing:.1em; text-transform:uppercase; font-size:10px; }
@@ -326,10 +345,11 @@
       #filters #filters-close { width:28px; min-height:28px; padding:4px; margin:0; }
       #filter-list { display:block; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
       #filters .count { margin-left:auto; flex-shrink:0; }
-      .library-content { padding:24px 20px 40px; }
-      .library-header { gap:20px; padding-bottom:20px; }
+      main { scroll-padding-top:136px; }
+      .library-content { padding:0 20px 40px; }
+      .library-header { top:-16px; gap:12px; padding:24px 0 16px; }
+      #search { font-size:16px; }
       .heading h1 { font-size:30px; }
-      .library-tools { gap:12px; }
       #grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px 20px; }
       .library-meta { margin:16px 0 24px; }
       .placeholder { padding:16px 14px 16px 22px; }
@@ -395,7 +415,7 @@
       <div class="library-content">
         <header class="library-header">
           <div class="heading"><span class="eyebrow" data-i18n="tagline">Je eigen leesruimte</span><h1 id="filter-title"><button id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters"><span id="filters-toggle-label" data-i18n="allBooks">Alle boeken</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button></h1></div>
-          <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur" data-i18n="" data-i18n-placeholder="searchPlaceholder" data-i18n-aria-label="searchLabel"></label><select id="sort" aria-label="Sorteren" data-i18n="" data-i18n-aria-label="sort"><option value="opened" data-i18n="recent">Laatst gelezen</option><option value="title" data-i18n="title">Titel</option><option value="author" data-i18n="author">Auteur</option><option value="added" data-i18n="added">Toegevoegd</option></select></div>
+          <div class="library-tools"><label class="search-field"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search" type="search" placeholder="Titel of auteur" aria-label="Zoeken op titel of auteur" data-i18n="" data-i18n-placeholder="searchPlaceholder" data-i18n-aria-label="searchLabel"></label><span class="sort-field"><select id="sort" aria-label="Sorteren" data-i18n="" data-i18n-aria-label="sort"><option value="opened" data-i18n="recent">Laatst gelezen</option><option value="title" data-i18n="title">Titel</option><option value="author" data-i18n="author">Auteur</option><option value="added" data-i18n="added">Toegevoegd</option></select><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></span></div>
         </header>
         <div class="library-meta"><div class="library-count-actions"><span id="library-count" role="status" aria-live="polite" data-i18n="bookCountOther" data-i18n-params='{"count":0}'>0 boeken</span><button id="clear-recent" hidden data-i18n="clearRecent">Lijst leegmaken</button></div><span data-i18n="pace">Jouw boeken. Jouw tempo.</span></div>
         <div id="grid"></div>

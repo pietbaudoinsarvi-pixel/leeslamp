@@ -1716,6 +1716,12 @@ $('#library').addEventListener('drop', async e => {
 
 // One reader session owns every timer, observer, frame, listener and render task.
 let active = null, closing = null;
+// The open book survives the phone ending the app in the background: it reopens at the next start.
+const READING_KEY = 'leeslamp.reading';
+const rememberReading = id => {
+    try { if (id) localStorage.setItem(READING_KEY, id); else localStorage.removeItem(READING_KEY); }
+    catch { /* Without storage the app simply starts in the library. */ }
+};
 const live = session => active === session && !session.controller.signal.aborted;
 const listen = (session, node, type, handler, options = {}) => node.addEventListener(type, handler,
     { ...options, signal: session.controller.signal });
@@ -2052,6 +2058,7 @@ async function openBook(record) {
         writes: Promise.resolve(), lastSave: 0, dirty: false, ready: false, urls: new Set(),
         wheelDelta: 0, wheelLock: false, wheelResetTimer: null, wheelLockTimer: null };
     active = session;
+    rememberReading(record.id);
     $('#library').hidden = true; $('#reader').hidden = false;
     $('#r-title').textContent = record.title;
     updateTitle();
@@ -2163,6 +2170,7 @@ async function closeBook() {
     const session = active;
     session.capture?.();
     active = null;
+    rememberReading('');
     session.controller.abort();
     clearTimeout(session.barTimer); clearTimeout(session.saveTimer); clearTimeout(session.resizeTimer);
     clearTimeout(session.retryTimer);
@@ -2788,7 +2796,28 @@ try {
     setImporting(false); renderLibrary();
 }
 catch (error) { report(() => t('libraryFailed'), error); }
-setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
+const cloudReady = setupCloud().catch(() => { console.warn('Cloud accounts unavailable'); });
+// Reopen the book that was open when the app last went away. A local copy opens at once;
+// otherwise the cloud account gets the chance to start first. A book picked meanwhile wins.
+async function resumeReading(id) {
+    const hasLocal = async record => {
+        if (!record) return false;
+        try { if ((await get('files', id))?.file) return true; } catch { /* Fall through to the folder. */ }
+        const root = record.source.kind === 'fs' && roots.find(root => root.id === record.source.root);
+        try { return Boolean(root) && await root.handle.queryPermission({ mode: 'read' }) === 'granted'; }
+        catch { return false; }
+    };
+    let record = books.find(book => book.id === id);
+    if (!await hasLocal(record)) {
+        await cloudReady;
+        record = books.find(book => book.id === id);
+        if (!record || !(cloud || await hasLocal(record))) { if (!active) rememberReading(''); return; }
+    }
+    if (active || closing || readSetting(READING_KEY, '') !== id) return;
+    await openBook(record);
+}
+const resumeId = readSetting(READING_KEY, '');
+if (resumeId) resumeReading(resumeId).catch(error => console.warn('Resuming book', error));
 // Opened from the desktop ("Open with Leeslamp"): add new books; one book opens, a group stays in the library.
 async function openLaunchedFiles(files) {
     const known = file => {

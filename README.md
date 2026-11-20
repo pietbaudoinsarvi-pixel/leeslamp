@@ -137,4 +137,6 @@ Bediening verdwijnt tijdens lezen; Aa en Inhoud verschijnen als lichte, scherp b
 Beweging: 150 ms voor aanraken, 500–600 ms voor onthullen; alleen transform en opacity.
 Omslagen verschijnen eenmaal met 40 ms verspringing (begrensd op 320 ms); de voortgangsbalk is direct zichtbaar.
 Omslagen buiten beeld worden overgeslagen bij layout en tekenen, zodat een bibliotheek van duizend boeken vlot blijft.
+Zoeken en sorteren delen één vlak veld met haarlijn; de kop met dat veld blijft bovenaan staan tijdens het scrollen.
+Een open boek wordt onthouden: sluit de telefoon de app in de achtergrond af, dan opent het boek bij terugkomst weer.
 Reduced motion schakelt alle animaties uit. Op smalle schermen wordt de zijrail een bovenrail.
